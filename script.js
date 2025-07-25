@@ -3,13 +3,22 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // --- Game Configuration ---
-const TILE_SIZE = 32; // Size of each tile in pixels (e.g., 32x32)
+// Isometric tile dimensions (e.g., 64px wide, 32px high for the "diamond" base)
+const TILE_ISO_WIDTH = 64;
+const TILE_ISO_HEIGHT = 32;
+
 const MAP_WIDTH = 20; // Map width in tiles
 const MAP_HEIGHT = 15; // Map height in tiles
 
-// Set canvas dimensions based on map size
-canvas.width = MAP_WIDTH * TILE_SIZE;
-canvas.height = MAP_HEIGHT * TILE_SIZE;
+// Adjust canvas dimensions to fit the isometric projection
+// The width will be (MAP_WIDTH + MAP_HEIGHT) * TILE_ISO_WIDTH / 2
+// The height will be (MAP_WIDTH + MAP_HEIGHT) * TILE_ISO_HEIGHT / 2
+canvas.width = (MAP_WIDTH + MAP_HEIGHT) * TILE_ISO_WIDTH / 2;
+canvas.height = (MAP_WIDTH + MAP_HEIGHT) * TILE_ISO_HEIGHT / 2 + TILE_ISO_HEIGHT; // Add extra height for tall objects
+
+// To center the isometric map on the canvas
+const xOffset = (canvas.width / 2) - (MAP_WIDTH * TILE_ISO_WIDTH / 2);
+const yOffset = TILE_ISO_HEIGHT; // Start drawing slightly lower to make room for top-left tiles
 
 // --- Tile Type Definitions ---
 const TILE_TYPE_PLAINS = 0;
@@ -17,16 +26,23 @@ const TILE_TYPE_LAKE_WATER = 1;
 const TILE_TYPE_FOREST_GROUND = 2; // The ground *within* the forest biome
 const TILE_TYPE_TREE = 3;         // Individual trees
 
-// Define colors for each tile type
+// Define colors for each tile type (will be replaced by images later)
 const tileColors = {
     [TILE_TYPE_PLAINS]: '#4CAF50',        // Green for plains
     [TILE_TYPE_LAKE_WATER]: '#2196F3',    // Blue for lake water
     [TILE_TYPE_FOREST_GROUND]: '#388E3C', // Darker green for forest ground
-    [TILE_TYPE_TREE]: '#795548'           // Brown for trees
+    [TILE_TYPE_TREE]: '#8B4513'           // Brown for tree trunk (for placeholder)
 };
 
 // --- Game Map Data (will be generated) ---
 let gameMap = [];
+
+// --- Coordinate Conversion Function (Grid to Isometric Screen) ---
+function isoToScreen(x, y) {
+    const screenX = (x - y) * (TILE_ISO_WIDTH / 2) + xOffset;
+    const screenY = (x + y) * (TILE_ISO_HEIGHT / 2) + yOffset;
+    return { x: screenX, y: screenY };
+}
 
 // --- Map Generation Function ---
 function generateMap() {
@@ -49,7 +65,6 @@ function generateMap() {
 
     for (let y = lakeStartY; y < lakeStartY + lakeHeight; y++) {
         for (let x = lakeStartX; x < lakeStartX + lakeWidth; x++) {
-            // Ensure coordinates are within bounds (just in case of weird random numbers)
             if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
                 gameMap[y][x] = TILE_TYPE_LAKE_WATER;
             }
@@ -57,18 +72,15 @@ function generateMap() {
     }
 
     // 3. Generate Forest Biome (covers a portion of remaining land)
-    // We'll define a large rectangular area that becomes forest ground
     const forestAreaWidth = Math.floor(Math.random() * (MAP_WIDTH / 2)) + 5; // Min 5, Max 1/2 of map width
     const forestAreaHeight = Math.floor(Math.random() * (MAP_HEIGHT / 2)) + 5; // Min 5, Max 1/2 of map height
 
-    // Random top-left corner for the forest area
     const forestStartX = Math.floor(Math.random() * (MAP_WIDTH - forestAreaWidth));
     const forestStartY = Math.floor(Math.random() * (MAP_HEIGHT - forestAreaHeight));
 
     for (let y = forestStartY; y < forestStartY + forestAreaHeight; y++) {
         for (let x = forestStartX; x < forestStartX + forestAreaWidth; x++) {
             if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
-                // Only turn into forest if it's not already water
                 if (gameMap[y][x] !== TILE_TYPE_LAKE_WATER) {
                     gameMap[y][x] = TILE_TYPE_FOREST_GROUND;
                 }
@@ -81,33 +93,52 @@ function generateMap() {
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             if (gameMap[y][x] === TILE_TYPE_FOREST_GROUND) {
-                if (Math.random() < treeDensity) { // Randomly place a tree
+                if (Math.random() < treeDensity) {
                     gameMap[y][x] = TILE_TYPE_TREE;
                 }
             }
         }
     }
-    
-    // Note: Plains will naturally be all areas not covered by water or forest
 }
 
 // --- Drawing Function ---
 function draw() {
-    // Clear the entire canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the entire canvas
 
-    // Draw the game map
+    // Iterate through the map in drawing order (from top-left to bottom-right)
+    // This ensures correct overlapping for isometric projection
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tileType = gameMap[y][x];
-            const color = tileColors[tileType];
+            const screenPos = isoToScreen(x, y);
 
-            ctx.fillStyle = color;
-            ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-
-            // Optional: Draw a grid line for visibility during development
+            // Draw the ground tile (plains, water, forest_ground)
+            ctx.fillStyle = tileColors[tileType] || tileColors[TILE_TYPE_PLAINS]; // Default to plains if type not found
+            
+            // Draw an isometric diamond for the base tile
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x, screenPos.y + TILE_ISO_HEIGHT / 2); // Left middle
+            ctx.lineTo(screenPos.x + TILE_ISO_WIDTH / 2, screenPos.y); // Top middle
+            ctx.lineTo(screenPos.x + TILE_ISO_WIDTH, screenPos.y + TILE_ISO_HEIGHT / 2); // Right middle
+            ctx.lineTo(screenPos.x + TILE_ISO_WIDTH / 2, screenPos.y + TILE_ISO_HEIGHT); // Bottom middle
+            ctx.closePath();
+            ctx.fill();
             ctx.strokeStyle = '#333';
-            ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            ctx.stroke();
+
+            // If it's a tree, draw the "3D" part (e.g., a taller block)
+            if (tileType === TILE_TYPE_TREE) {
+                // Placeholder for a "tall" tree effect (replace with sprite drawing later)
+                const treeHeight = TILE_ISO_HEIGHT * 2; // Make tree taller than tile
+                
+                ctx.fillStyle = tileColors[TILE_TYPE_TREE]; // Trunk color
+                // Draw a rectangle above the tile's base, positioned to look like it's coming from the center-top
+                ctx.fillRect(screenPos.x + TILE_ISO_WIDTH / 2 - (TILE_ISO_WIDTH / 8), screenPos.y - treeHeight + TILE_ISO_HEIGHT, TILE_ISO_WIDTH / 4, treeHeight);
+
+                // Placeholder for leaves (a green rectangle above the trunk)
+                ctx.fillStyle = '#228B22'; // Forest green for leaves
+                ctx.fillRect(screenPos.x + TILE_ISO_WIDTH / 2 - (TILE_ISO_WIDTH / 3), screenPos.y - treeHeight + TILE_ISO_HEIGHT - (TILE_ISO_HEIGHT / 2), TILE_ISO_WIDTH * 2 / 3, TILE_ISO_HEIGHT);
+            }
         }
     }
 }

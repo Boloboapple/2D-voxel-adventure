@@ -43,6 +43,15 @@ const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; 
 // --- Game Map Data (will be generated) ---
 let gameMap = [];
 
+// --- Player Object ---
+const player = {
+    x: 0, // Player's X grid coordinate
+    y: 0, // Player's Y grid coordinate
+    color: '#FFD700', // Gold color for the player
+    width: TILE_ISO_WIDTH * 0.4, // Player width (e.g., 40% of tile width)
+    height: TILE_ISO_HEIGHT * 1.5 // Player height (e.g., 1.5 times tile height for a simple sprite)
+};
+
 // --- Coordinate Conversion Function (Grid to Isometric Screen) ---
 // Returns the screen coordinates of the TOP-MIDDLE point of the isometric tile's top diamond
 function isoToScreen(x, y) {
@@ -65,9 +74,6 @@ function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle) 
     ctx.lineTo(screenX_top_middle + TILE_ISO_WIDTH / 2, screenY_top_middle + TILE_ISO_HEIGHT); // Bottom middle
     ctx.closePath();
     ctx.fill();
-    // Removed border drawing:
-    // ctx.strokeStyle = '#222';
-    // ctx.stroke();
 }
 
 
@@ -111,10 +117,22 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
     ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight); // Top-middle
     ctx.closePath();
     ctx.fill();
+}
 
-    // Removed border drawing:
-    // ctx.strokeStyle = '#222';
-    // ctx.stroke();
+// Draws the player as a simple rectangle (or you can expand this to a simple isometric figure)
+function drawPlayer() {
+    const screenPos = isoToScreen(player.x, player.y);
+
+    // Calculate player's actual drawing position
+    // Center the player horizontally on the tile
+    const playerDrawX = screenPos.x + (TILE_ISO_WIDTH / 2) - (player.width / 2);
+    // Position player's feet at the bottom-middle of the tile, then shift up by player height
+    const playerDrawY = screenPos.y + TILE_ISO_HEIGHT - player.height;
+
+    ctx.fillStyle = player.color;
+    ctx.fillRect(playerDrawX, playerDrawY, player.width, player.height);
+    ctx.strokeStyle = '#000'; // Black border for visibility
+    ctx.strokeRect(playerDrawX, playerDrawY, player.width, player.height);
 }
 
 
@@ -130,7 +148,6 @@ function generateMap() {
     }
 
     // 2. Generate Lake (using a more organic "blob" method)
-    // Adjusted parameters for smaller, more controlled lake growth
     const initialLakeSize = Math.floor(Math.random() * 3) + 2; // Start with a small blob of 2-4 tiles
     const lakeIterations = 5; // Fewer iterations for less expansion
     const lakeGrowthChance = 0.4; // Slightly lower chance for a neighbor to become water
@@ -184,7 +201,6 @@ function generateMap() {
 
 
     // 3. Generate Forest Biome (covers a portion of remaining land)
-    // Adjusted parameters for larger forests
     const forestAreaWidth = Math.floor(Math.random() * (MAP_WIDTH / 2)) + Math.floor(MAP_WIDTH / 4) + 2; // Increased base size
     const forestAreaHeight = Math.floor(Math.random() * (MAP_HEIGHT / 2)) + Math.floor(MAP_HEIGHT / 4) + 2; // Increased base size
     const forestStartX = Math.floor(Math.random() * (MAP_WIDTH - forestAreaWidth));
@@ -193,8 +209,6 @@ function generateMap() {
     for (let y = forestStartY; y < forestStartY + forestAreaHeight; y++) {
         for (let x = forestStartX; x < forestStartX + forestAreaWidth; x++) {
             if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
-                // IMPORTANT: Only convert to forest ground if it's currently plains
-                // This prevents overwriting lakes that might have expanded into the forest's intended area
                 if (gameMap[y][x] === TILE_TYPE_PLAINS) {
                     gameMap[y][x] = TILE_TYPE_FOREST_GROUND;
                 }
@@ -203,15 +217,29 @@ function generateMap() {
     }
 
     // 4. Place individual Trees within Forest_Ground tiles
-    // This order ensures trees are only placed on "forest ground" and not over water.
     const treeDensity = 0.3;
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
-            if (gameMap[y][x] === TILE_TYPE_FOREST_GROUND) { // ONLY if it's forest ground
+            if (gameMap[y][x] === TILE_TYPE_FOREST_GROUND) {
                 if (Math.random() < treeDensity) {
                     gameMap[y][x] = TILE_TYPE_TREE;
                 }
             }
+        }
+    }
+
+    // 5. Place Player on a valid starting tile (Plains or Forest Ground)
+    // Find a random valid starting position for the player
+    let placedPlayer = false;
+    while (!placedPlayer) {
+        const startX = Math.floor(Math.random() * MAP_WIDTH);
+        const startY = Math.floor(Math.random() * MAP_HEIGHT);
+        const tileType = gameMap[startY][startX];
+
+        if (tileType === TILE_TYPE_PLAINS || tileType === TILE_TYPE_FOREST_GROUND) {
+            player.x = startX;
+            player.y = startY;
+            placedPlayer = true;
         }
     }
 }
@@ -222,36 +250,30 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the entire canvas
 
     // Iterate through the map in drawing order (from top-left to bottom-right in isometric space)
-    // This ensures correct overlapping for isometric projection (painter's algorithm)
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tileType = gameMap[y][x];
             const screenPos = isoToScreen(x, y); // Get top-middle screen coords of the ground tile
 
-            // Draw the ground tile first
-            // Ensure trees use their own ground color (FOREST_GROUND) instead of TILE_TYPE_TREE for the base
+            // Draw the ground tile
             const groundColorSet = tileColors[
                 tileType === TILE_TYPE_TREE ? TILE_TYPE_FOREST_GROUND : tileType
             ] || tileColors[TILE_TYPE_PLAINS];
             drawIsometricDiamond(groundColorSet, screenPos.x, screenPos.y);
 
-            // If it's a tree, draw the 3D tree components on top
+            // Draw 3D objects (trees)
             if (tileType === TILE_TYPE_TREE) {
-                const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0; // Pixel height of the trunk block
-                const TRUNK_ISO_WIDTH_SCALE = 0.4; // Trunk is 40% width of a full tile
-                const TRUNK_ISO_HEIGHT_SCALE = 0.4; // Trunk's top diamond height
+                const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0;
+                const TRUNK_ISO_WIDTH_SCALE = 0.4;
+                const TRUNK_ISO_HEIGHT_SCALE = 0.4;
 
-                const LEAVES_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5; // Pixel height of the leaves block
-                const LEAVES_ISO_WIDTH_SCALE = 1.4; // Leaves are 140% width of a full tile (overhang)
-                const LEAVES_ISO_HEIGHT_SCALE = 1.4; // Leaves' top diamond height
+                const LEAVES_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5;
+                const LEAVES_ISO_WIDTH_SCALE = 1.4;
+                const LEAVES_ISO_HEIGHT_SCALE = 1.4;
 
-                // --- Draw Trunk ---
-                // Calculate the top-middle position of the TRUNK's top diamond face
-                // It sits directly on the ground tile (screenPos), and extends TRUNK_Z_HEIGHT upwards
                 const trunkTopScreenY = screenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
-
                 drawIsometric3DBlock(
-                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2), // Center trunk horizontally on the tile
+                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
                     trunkTopScreenY,
                     TRUNK_Z_HEIGHT,
                     TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
@@ -259,23 +281,60 @@ function draw() {
                     TREE_TRUNK_COLOR
                 );
 
-                // --- Draw Leaves ---
-                // Calculate the top-middle position of the LEAVES' top diamond face
-                // It sits on top of the trunk. Its base starts at the trunk's top diamond's base.
-                const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2); // Correctly position leaves above the trunk's top diamond
-                
+                const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
                 drawIsometric3DBlock(
-                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2), // Center leaves horizontally (may overhang)
+                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
                     leavesTopScreenY,
                     LEAVES_Z_HEIGHT,
                     TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
-                    tileColors[TILE_TYPE_TREE] // Use green colors for leaves
+                    tileColors[TILE_TYPE_TREE]
                 );
             }
         }
     }
+    // Draw player AFTER all tiles, to ensure it's on top
+    drawPlayer();
 }
+
+// --- Movement Logic and Collision Detection ---
+function movePlayer(dx, dy) {
+    const newX = player.x + dx;
+    const newY = player.y + dy;
+
+    // Check map boundaries
+    if (newX >= 0 && newX < MAP_WIDTH && newY >= 0 && newY < MAP_HEIGHT) {
+        const targetTileType = gameMap[newY][newX];
+
+        // Collision check: Cannot walk on water or trees
+        if (targetTileType !== TILE_TYPE_LAKE_WATER && targetTileType !== TILE_TYPE_TREE) {
+            player.x = newX;
+            player.y = newY;
+            draw(); // Redraw the map with the player in the new position
+        } else {
+            console.log("Collision! Cannot move there."); // For debugging
+        }
+    }
+}
+
+// --- Keyboard Input Handling ---
+document.addEventListener('keydown', (event) => {
+    switch (event.key.toLowerCase()) {
+        case 'w': // Move Up-Left (isometric N/W)
+            movePlayer(0, -1);
+            break;
+        case 's': // Move Down-Right (isometric S/E)
+            movePlayer(0, 1);
+            break;
+        case 'a': // Move Down-Left (isometric S/W)
+            movePlayer(-1, 0);
+            break;
+        case 'd': // Move Up-Right (isometric N/E)
+            movePlayer(1, 0);
+            break;
+    }
+});
+
 
 // --- Initial Setup ---
 generateMap(); // Generate the map once

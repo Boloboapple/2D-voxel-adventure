@@ -39,8 +39,13 @@ const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2); // Shi
 // Debugging: Log calculated values
 console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
 console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`);
+
+
+// --- GAME VERSION COUNTER ---
+// IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
+const GAME_VERSION = 5; // <--- INCREMENT THIS NUMBER FOR EACH NEW UPDATE!
 console.log("------------------------------------------");
-console.log(">>> NEW SCRIPT VERSION LOADED - EXPECT FIXES! <<<"); // This will confirm load
+console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
 
 // --- Tile Type Definitions ---
@@ -324,6 +329,11 @@ function generateMap() {
 // --- Main Drawing Function (Modified for Z-sorting) ---
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw the version number on the canvas for easy verification
+    ctx.font = '24px Arial';
+    ctx.fillStyle = 'white';
+    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
 
     // Array to hold all drawable entities
     const drawables = [];

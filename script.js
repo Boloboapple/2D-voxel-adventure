@@ -65,8 +65,9 @@ function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle) 
     ctx.lineTo(screenX_top_middle + TILE_ISO_WIDTH / 2, screenY_top_middle + TILE_ISO_HEIGHT); // Bottom middle
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#222';
-    ctx.stroke();
+    // Removed border drawing:
+    // ctx.strokeStyle = '#222';
+    // ctx.stroke();
 }
 
 
@@ -111,12 +112,13 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = '#222';
-    ctx.stroke();
+    // Removed border drawing:
+    // ctx.strokeStyle = '#222';
+    // ctx.stroke();
 }
 
 
-// --- Map Generation Function ---
+// --- Map Generation Function (Same as before) ---
 function generateMap() {
     // 1. Initialize entire map as plains
     gameMap = [];

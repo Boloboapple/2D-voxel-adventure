@@ -13,33 +13,17 @@ const MAP_HEIGHT = 15; // Map height in tiles
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3; // Trunk (1.5) + Leaves (1.5)
 
-// Calculate required canvas dimensions based on map size and object height
-// The width needs to accommodate the full diagonal span of the isometric map.
-// The height needs to accommodate the vertical span of the map plus the height of the tallest object.
-const requiredCanvasWidth = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_WIDTH / 2);
-const requiredCanvasHeight = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_HEIGHT / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND;
+// Set canvas dimensions to be large enough to contain the full isometric map
+// and any tall objects without clipping. These values are generous.
+canvas.width = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_WIDTH / 2) + TILE_ISO_WIDTH * 2; // Added extra padding
+canvas.height = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_HEIGHT / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND + TILE_ISO_HEIGHT * 2; // Added extra padding
 
-// Add some padding to ensure nothing is clipped at the edges
-const paddingX = TILE_ISO_WIDTH * 2;
-const paddingY = TILE_ISO_HEIGHT * 2;
-
-canvas.width = requiredCanvasWidth + paddingX;
-canvas.height = requiredCanvasHeight + paddingY;
-
-// --- Global Offset for the Isometric Drawing ---
+// --- IMPORTANT FIX: Global Offset for the Isometric Drawing ---
 // These offsets define where the (0,0) grid tile's top-middle point will be placed on the canvas.
 // We need to ensure it's not negative and leaves enough space for the entire map.
-// To center the map, we calculate the offset.
-// The top-left corner of the isometric projection of the map (0,0) is at:
-// X: MAP_HEIGHT * TILE_ISO_WIDTH / 2 (due to isometric skew)
-// Y: MAX_OBJECT_HEIGHT_FROM_GROUND (to make space for tallest objects above the top-left tile)
-const globalDrawOffsetX = (MAP_HEIGHT * TILE_ISO_WIDTH / 2) + (paddingX / 2); // Shift right to make space for leftmost map parts + padding
-const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2); // Shift down to make space for tree tops + padding
-
-// Debugging: Log calculated values
-console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
-console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`);
-
+// To move the map more to the right and down, we increase these values.
+const globalDrawOffsetX = (MAP_HEIGHT * TILE_ISO_WIDTH / 2) + 50; // Shift right to make space for leftmost map parts + padding
+const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + 50; // Shift down to make space for tree tops + padding
 
 // --- Tile Type Definitions ---
 const TILE_TYPE_PLAINS = 0;
@@ -68,7 +52,7 @@ const player = {
     bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
     legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
     isMoving: false, // Flag to indicate if player is currently interpolating between tiles
-    moveSpeed: 0.05, // How fast player interpolates (0.01 - 1.0, larger is faster) - DECREASED FOR SLOWER MOVEMENT
+    moveSpeed: 0.1, // How fast player interpolates (0.01 - 1.0, larger is faster)
     animationFrame: 0, // Current frame of walking animation
     animationSpeed: 5, // How many game frames per animation frame (lower = faster)
     frameCount: 0 // Global frame counter for animation timing
@@ -76,7 +60,7 @@ const player = {
 
 // Define player body and leg dimensions relative to tile size
 // Adjusted to make room for legs
-const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8; // Further shortened body
+const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 1.0; // Shortened body
 const PLAYER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
 const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
 
@@ -170,20 +154,28 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
 
+
     // Calculate base position for the player figure
     // Player's feet should be at the base of the tile (screenPos.y + TILE_ISO_HEIGHT)
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
+    // Bottom of the body rests on top of legs
+    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT;
 
-    // *** MODIFICATION HERE: Raise the player slightly above the tile's base ***
-    // This shifts the player up by a fraction of the tile height,
-    // ensuring their lowest part remains visually above the ground tile.
-    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5; // Lift player by half tile height
+    // Draw Body
+    drawIsometric3DBlock(
+        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
+        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2), // Top-middle Y of body's top diamond
+        PLAYER_BODY_Z_HEIGHT,
+        PLAYER_BODY_ISO_WIDTH,
+        PLAYER_BODY_ISO_HEIGHT,
+        player.bodyColor
+    );
 
-    // Draw Legs FIRST so the body overlaps them correctly
+    // Draw Legs (positioned below the body, starting from the ground)
     // Leg A (front-left/right)
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
-        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerLiftOffset + animOffsetA, // <-- APPLY OFFSET HERE
+        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetA, // Top-middle Y of leg A's top diamond
         PLAYER_LEG_Z_HEIGHT,
         PLAYER_LEG_ISO_WIDTH,
         PLAYER_LEG_ISO_HEIGHT,
@@ -193,24 +185,11 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
     // Leg B (back-right/left)
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
-        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerLiftOffset + animOffsetB, // <-- APPLY OFFSET HERE
+        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetB, // Top-middle Y of leg B's top diamond
         PLAYER_LEG_Z_HEIGHT,
         PLAYER_LEG_ISO_WIDTH,
         PLAYER_LEG_ISO_HEIGHT,
         player.legColor
-    );
-
-    // Draw Body SECOND, on top of the legs
-    // The bottom of the body should sit on top of the legs, which are PLAYER_LEG_Z_HEIGHT tall
-    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT; 
-
-    drawIsometric3DBlock(
-        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
-        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2) - playerLiftOffset, // <-- APPLY OFFSET HERE
-        PLAYER_BODY_Z_HEIGHT,
-        PLAYER_BODY_ISO_WIDTH,
-        PLAYER_BODY_ISO_HEIGHT,
-        player.bodyColor
     );
 }
 
@@ -330,29 +309,15 @@ function draw() {
             const tileType = gameMap[y][x];
             const screenPos = isoToScreen(x, y);
 
-            // Determine the correct color set for the ground tile
-            let groundColorSet;
-            if (tileType === TILE_TYPE_TREE) {
-                // If it's a tree tile, its ground is FOREST_GROUND
-                groundColorSet = tileColors[TILE_TYPE_FOREST_GROUND];
-            } else {
-                // Otherwise, use its own tile type color
-                groundColorSet = tileColors[tileType];
-            }
-
-            // Fallback: If for some reason a tile type is not defined in tileColors, use Plains
-            if (!groundColorSet) {
-                console.warn(`Warning: Missing color definition for tileType ${tileType}. Using PLAINS.`);
-                groundColorSet = tileColors[TILE_TYPE_PLAINS];
-            }
-
             // Add ground tile
+            const groundColorSet = tileColors[
+                tileType === TILE_TYPE_TREE ? TILE_TYPE_FOREST_GROUND : tileType
+            ] || tileColors[TILE_TYPE_PLAINS];
             drawables.push({
                 type: 'tile',
                 x: x, y: y,
                 screenX: screenPos.x,
-                screenY: screenPos.y,
-                sortY: screenPos.y + TILE_ISO_HEIGHT, // Sort by the lowest point of the tile
+                screenY: screenPos.y, // Use this for sorting
                 colorSet: groundColorSet
             });
 
@@ -374,12 +339,11 @@ function draw() {
                     type: 'treeTrunk',
                     x: x, y: y,
                     screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
-                    screenY: trunkTopScreenY,
+                    screenY: trunkTopScreenY, // Use this for sorting
                     zHeight: TRUNK_Z_HEIGHT,
                     isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
-                    colors: TREE_TRUNK_COLOR,
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT // Sort by the lowest point of the trunk
+                    colors: TREE_TRUNK_COLOR
                 });
 
                 // Add leaves
@@ -387,69 +351,41 @@ function draw() {
                     type: 'treeLeaves',
                     x: x, y: y,
                     screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
-                    screenY: leavesTopScreenY,
+                    screenY: leavesTopScreenY, // Use this for sorting
                     zHeight: LEAVES_Z_HEIGHT,
                     isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
-                    colors: tileColors[TILE_TYPE_TREE], // Tree leaves use TILE_TYPE_TREE colors
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT + LEAVES_Z_HEIGHT // Sort by the lowest point of the leaves
+                    colors: tileColors[TILE_TYPE_TREE]
                 });
             }
         }
     }
 
     // Add player to drawables
-    const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
-
-    // MODIFICATION HERE:
-    // We want the player to always draw AFTER the tile they are on.
-    // The tile's sortY is screenPos.y + TILE_ISO_HEIGHT.
-    // We add a small epsilon to the player's sortY to ensure it sorts after the tile
-    // when on the same conceptual ground plane.
-    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1; // Add a small epsilon
-
+    // The player's effective screen Y for sorting should be based on their feet's screen Y
+    const playerScreenPos = isoToScreen(player.x, player.y);
+    const playerEffectiveScreenY = playerScreenPos.y + TILE_ISO_HEIGHT; // Bottom of the tile player is on
     drawables.push({
         type: 'player',
-        x: player.x, // Store interpolated positions for drawing
-        y: player.y,
-        sortY: playerEffectiveSortY // The primary sort key for depth
+        x: player.x, y: player.y, // Grid position for sorting ties
+        screenX: player.x, // Store grid positions
+        screenY: player.y, // for tie-breaking
+        sortY: playerEffectiveScreenY // The primary sort key for depth
     });
 
 
-    // Sort drawables by their sortY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
+    // Sort drawables by their screenY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
     drawables.sort((a, b) => {
         // Primary sort by actual screen Y of their lowest point (or effective base)
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        // Secondary sort by grid Y for items on the same sortY level (important for isometric depth)
+        // Secondary sort by grid Y for items on the same screenY level
         if (a.y !== b.y) {
             return a.y - b.y;
         }
-        // Tertiary sort by grid X for items on the same grid Y and sortY level
-        if (a.x !== b.x) {
-            return a.x - b.x;
-        }
-        // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
-        // Order: Tile -> Tree Trunk -> Player -> Tree Leaves
-        // This order is crucial: player must be drawn AFTER tile, but BEFORE treeLeaves on the same tile.
-        const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'player': 2, 'treeLeaves': 3 };
-
-        // *** ADDED DEBUGGING LOGS HERE ***
-        // Log when a tile and player are being compared at the same (x,y) and similar sortY
-        if ((a.type === 'tile' && b.type === 'player') || (a.type === 'player' && b.type === 'tile')) {
-            // Check if they are effectively on the same grid cell (allowing for float inaccuracies)
-            const tolerance = 0.5; // Small tolerance for x,y comparison
-            if (Math.abs(a.x - b.x) < tolerance && Math.abs(a.y - b.y) < tolerance) {
-                console.log(`Sorting Conflict:`);
-                console.log(`  A: Type=${a.type}, X=${a.x.toFixed(2)}, Y=${a.y.toFixed(2)}, SortY=${a.sortY.toFixed(2)}, Order=${typeOrder[a.type]}`);
-                console.log(`  B: Type=${b.type}, X=${b.x.toFixed(2)}, Y=${b.y.toFixed(2)}, SortY=${b.sortY.toFixed(2)}, Order=${typeOrder[b.type]}`);
-                console.log(`  Result of comparison (A-B): ${typeOrder[a.type] - typeOrder[b.type]}`);
-            }
-        }
-        // *** END DEBUGGING LOGS ***
-
-        return typeOrder[a.type] - typeOrder[b.type];
+        // Tertiary sort by grid X for items on the same grid Y, same screenY level
+        return a.x - b.x;
     });
 
     // Draw all sorted entities
@@ -477,7 +413,7 @@ function movePlayer(dx, dy) {
     if (newTargetX >= 0 && newTargetX < MAP_WIDTH && newTargetY >= 0 && newTargetY < MAP_HEIGHT) {
         const targetTileType = gameMap[newTargetY][newTargetX];
 
-        // COLLISION FIX: Cannot walk on water or *any* tile where a tree exists
+        // Collision check: Cannot walk on water or trees
         if (targetTileType !== TILE_TYPE_LAKE_WATER && targetTileType !== TILE_TYPE_TREE) {
             player.targetX = newTargetX;
             player.targetY = newTargetY;
@@ -493,7 +429,7 @@ function movePlayer(dx, dy) {
 function gameLoop() {
     // 1. Update Player Position (Interpolation)
     // Check if current (x,y) is different from target (x,y)
-    if (Math.abs(player.x - player.targetX) > player.moveSpeed / 2 || Math.abs(player.y - player.targetY) > player.moveSpeed / 2) {
+    if (player.x !== player.targetX || player.y !== player.targetY) {
         player.isMoving = true;
 
         // Move X
@@ -511,8 +447,7 @@ function gameLoop() {
         }
 
         // Check if movement is complete (or very close)
-        // Using a small epsilon for float comparison
-        if (Math.abs(player.x - player.targetX) < 0.01 && Math.abs(player.y - player.targetY) < 0.01) {
+        if (Math.abs(player.x - player.targetX) < player.moveSpeed / 2 && Math.abs(player.y - player.targetY) < player.moveSpeed / 2) {
             player.x = player.targetX; // Snap to target to prevent floating point issues
             player.y = player.targetY;
             player.isMoving = false; // Stop interpolation

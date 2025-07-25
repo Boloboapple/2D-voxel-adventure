@@ -434,6 +434,21 @@ function draw() {
         // Order: Tile -> Tree Trunk -> Player -> Tree Leaves
         // This order is crucial: player must be drawn AFTER tile, but BEFORE treeLeaves on the same tile.
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'player': 2, 'treeLeaves': 3 };
+
+        // *** ADDED DEBUGGING LOGS HERE ***
+        // Log when a tile and player are being compared at the same (x,y) and similar sortY
+        if ((a.type === 'tile' && b.type === 'player') || (a.type === 'player' && b.type === 'tile')) {
+            // Check if they are effectively on the same grid cell (allowing for float inaccuracies)
+            const tolerance = 0.5; // Small tolerance for x,y comparison
+            if (Math.abs(a.x - b.x) < tolerance && Math.abs(a.y - b.y) < tolerance) {
+                console.log(`Sorting Conflict:`);
+                console.log(`  A: Type=${a.type}, X=${a.x.toFixed(2)}, Y=${a.y.toFixed(2)}, SortY=${a.sortY.toFixed(2)}, Order=${typeOrder[a.type]}`);
+                console.log(`  B: Type=${b.type}, X=${b.x.toFixed(2)}, Y=${b.y.toFixed(2)}, SortY=${b.sortY.toFixed(2)}, Order=${typeOrder[b.type]}`);
+                console.log(`  Result of comparison (A-B): ${typeOrder[a.type] - typeOrder[b.type]}`);
+            }
+        }
+        // *** END DEBUGGING LOGS ***
+
         return typeOrder[a.type] - typeOrder[b.type];
     });
 

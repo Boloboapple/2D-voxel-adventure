@@ -45,22 +45,26 @@ let gameMap = [];
 
 // --- Player Object ---
 const player = {
-    x: 0, // Player's X grid coordinate
-    y: 0, // Player's Y grid coordinate
+    x: 0, // Player's X grid coordinate (current interpolated position)
+    y: 0, // Player's Y grid coordinate (current interpolated position)
+    targetX: 0, // Player's target X grid coordinate for movement
+    targetY: 0, // Player's target Y grid coordinate for movement
     bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
     legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
-    isMoving: false, // Flag to indicate if player is currently animating a move
+    isMoving: false, // Flag to indicate if player is currently interpolating between tiles
+    moveSpeed: 0.1, // How fast player interpolates (0.01 - 1.0, larger is faster)
     animationFrame: 0, // Current frame of walking animation
     animationSpeed: 5, // How many game frames per animation frame (lower = faster)
     frameCount: 0 // Global frame counter for animation timing
 };
 
 // Define player body and leg dimensions relative to tile size
-const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5;
+// Adjusted to make room for legs
+const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 1.0; // Shortened body
 const PLAYER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
 const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
 
-const PLAYER_LEG_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8; // Height of each leg segment
+const PLAYER_LEG_Z_HEIGHT = TILE_ISO_HEIGHT * 1.0; // Height of each leg segment
 const PLAYER_LEG_ISO_WIDTH = TILE_ISO_WIDTH * 0.2; // Width of each leg
 const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2; // Height of each leg's top diamond
 
@@ -72,7 +76,7 @@ function isoToScreen(x, y) {
     return { x: screenX, y: screenY };
 }
 
-// --- Drawing Helper Functions (No changes needed here for this request) ---
+// --- Drawing Helper Functions ---
 
 // Draws an isometric diamond (like a flat ground tile)
 // screenX_top_middle, screenY_top_middle are the canvas coordinates of the top-middle vertex of the diamond
@@ -132,30 +136,30 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
 }
 
 // Draws the player as a simple 3D block figure with animated legs
-function drawPlayer() {
-    const screenPos = isoToScreen(player.x, player.y);
+function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
+    const screenPos = isoToScreen(drawX, drawY);
 
     // Animation offset for legs
-    let animOffsetA = 0; // For leg A (front-left in isometric, or right in a top-down view)
-    let animOffsetB = 0; // For leg B (back-right in isometric, or left in a top-down view)
+    let animOffsetA = 0;
+    let animOffsetB = 0;
 
     // A simple 4-frame animation cycle for walking
     if (player.isMoving) {
         const frame = player.animationFrame;
         // Adjust leg Y position to simulate lifting
-        if (frame === 0) { animOffsetA = -TILE_ISO_HEIGHT * 0.1; animOffsetB = 0; }
-        else if (frame === 1) { animOffsetA = 0; animOffsetB = -TILE_ISO_HEIGHT * 0.1; }
-        else if (frame === 2) { animOffsetA = -TILE_ISO_HEIGHT * 0.1; animOffsetB = 0; }
-        else if (frame === 3) { animOffsetA = 0; animOffsetB = -TILE_ISO_HEIGHT * 0.1; }
-        // For a more complex animation, you could add more frames and sine/cosine waves for smooth motion.
+        const liftAmount = TILE_ISO_HEIGHT * 0.08; // How much legs lift
+        if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
+        else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
 
 
     // Calculate base position for the player figure
     // Player's feet should be at the base of the tile (screenPos.y + TILE_ISO_HEIGHT)
-    // Then shift up by the total height of the player (body + leg height)
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
-    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT; // Bottom of the body rests on top of legs
+    // Bottom of the body rests on top of legs
+    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT;
 
     // Draw Body
     drawIsometric3DBlock(
@@ -167,7 +171,7 @@ function drawPlayer() {
         player.bodyColor
     );
 
-    // Draw Legs
+    // Draw Legs (positioned below the body, starting from the ground)
     // Leg A (front-left/right)
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
@@ -202,16 +206,14 @@ function generateMap() {
     }
 
     // 2. Generate Lake (using a more organic "blob" method)
-    const initialLakeSize = Math.floor(Math.random() * 3) + 2; // Start with a small blob of 2-4 tiles
-    const lakeIterations = 5; // Fewer iterations for less expansion
-    const lakeGrowthChance = 0.4; // Slightly lower chance for a neighbor to become water
-    const lakeShrinkChance = 0.08; // Slightly higher chance for water to revert (more inlets/islands)
+    const initialLakeSize = Math.floor(Math.random() * 3) + 2;
+    const lakeIterations = 5;
+    const lakeGrowthChance = 0.4;
+    const lakeShrinkChance = 0.08;
 
-    // Pick a random starting point for the lake
     let lakeStartX = Math.floor(Math.random() * (MAP_WIDTH - initialLakeSize));
     let lakeStartY = Math.floor(Math.random() * (MAP_HEIGHT - initialLakeSize));
 
-    // Create initial lake seed
     for (let y = lakeStartY; y < lakeStartY + initialLakeSize; y++) {
         for (let x = lakeStartX; x < lakeStartX + initialLakeSize; x++) {
             if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
@@ -220,18 +222,14 @@ function generateMap() {
         }
     }
 
-    // Expand lake iteratively
     for (let i = 0; i < lakeIterations; i++) {
-        let newMapState = JSON.parse(JSON.stringify(gameMap)); // Create a copy to apply changes simultaneously
+        let newMapState = JSON.parse(JSON.stringify(gameMap));
         for (let y = 0; y < MAP_HEIGHT; y++) {
             for (let x = 0; x < MAP_WIDTH; x++) {
                 if (gameMap[y][x] === TILE_TYPE_LAKE_WATER) {
-                    // Try to expand to neighbors
                     const neighbors = [
-                        { dx: 0, dy: -1 }, // North
-                        { dx: 0, dy: 1 },  // South
-                        { dx: -1, dy: 0 }, // West
-                        { dx: 1, dy: 0 }   // East
+                        { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                        { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
                     ];
                     for (const neighbor of neighbors) {
                         const nx = x + neighbor.dx;
@@ -243,20 +241,18 @@ function generateMap() {
                             }
                         }
                     }
-                    // Small chance for water to revert to land (for more irregular shapes/islands)
                     if (Math.random() < lakeShrinkChance) {
                         newMapState[y][x] = TILE_TYPE_PLAINS;
                     }
                 }
             }
         }
-        gameMap = newMapState; // Update the map for the next iteration
+        gameMap = newMapState;
     }
 
-
     // 3. Generate Forest Biome (covers a portion of remaining land)
-    const forestAreaWidth = Math.floor(Math.random() * (MAP_WIDTH / 2)) + Math.floor(MAP_WIDTH / 4) + 2; // Increased base size
-    const forestAreaHeight = Math.floor(Math.random() * (MAP_HEIGHT / 2)) + Math.floor(MAP_HEIGHT / 4) + 2; // Increased base size
+    const forestAreaWidth = Math.floor(Math.random() * (MAP_WIDTH / 2)) + Math.floor(MAP_WIDTH / 4) + 2;
+    const forestAreaHeight = Math.floor(Math.random() * (MAP_HEIGHT / 2)) + Math.floor(MAP_HEIGHT / 4) + 2;
     const forestStartX = Math.floor(Math.random() * (MAP_WIDTH - forestAreaWidth));
     const forestStartY = Math.floor(Math.random() * (MAP_HEIGHT - forestAreaHeight));
 
@@ -292,29 +288,40 @@ function generateMap() {
         if (tileType === TILE_TYPE_PLAINS || tileType === TILE_TYPE_FOREST_GROUND) {
             player.x = startX;
             player.y = startY;
+            player.targetX = startX; // Initialize target to current position
+            player.targetY = startY; // Initialize target to current position
             placedPlayer = true;
         }
     }
 }
 
 
-// --- Main Drawing Function ---
+// --- Main Drawing Function (Modified for Z-sorting) ---
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the entire canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Iterate through the map in drawing order (from top-left to bottom-right in isometric space)
+    // Array to hold all drawable entities
+    const drawables = [];
+
+    // Add map tiles and trees to drawables
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tileType = gameMap[y][x];
-            const screenPos = isoToScreen(x, y); // Get top-middle screen coords of the ground tile
+            const screenPos = isoToScreen(x, y);
 
-            // Draw the ground tile
+            // Add ground tile
             const groundColorSet = tileColors[
                 tileType === TILE_TYPE_TREE ? TILE_TYPE_FOREST_GROUND : tileType
             ] || tileColors[TILE_TYPE_PLAINS];
-            drawIsometricDiamond(groundColorSet, screenPos.x, screenPos.y);
+            drawables.push({
+                type: 'tile',
+                x: x, y: y,
+                screenX: screenPos.x,
+                screenY: screenPos.y, // Use this for sorting
+                colorSet: groundColorSet
+            });
 
-            // Draw 3D objects (trees)
+            // If it's a tree, add its components as separate drawables
             if (tileType === TILE_TYPE_TREE) {
                 const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0;
                 const TRUNK_ISO_WIDTH_SCALE = 0.4;
@@ -325,47 +332,93 @@ function draw() {
                 const LEAVES_ISO_HEIGHT_SCALE = 1.4;
 
                 const trunkTopScreenY = screenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
-                drawIsometric3DBlock(
-                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
-                    trunkTopScreenY,
-                    TRUNK_Z_HEIGHT,
-                    TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
-                    TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
-                    TREE_TRUNK_COLOR
-                );
-
                 const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
-                drawIsometric3DBlock(
-                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
-                    leavesTopScreenY,
-                    LEAVES_Z_HEIGHT,
-                    TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
-                    TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
-                    tileColors[TILE_TYPE_TREE]
-                );
+
+                // Add trunk
+                drawables.push({
+                    type: 'treeTrunk',
+                    x: x, y: y,
+                    screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
+                    screenY: trunkTopScreenY, // Use this for sorting
+                    zHeight: TRUNK_Z_HEIGHT,
+                    isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
+                    isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
+                    colors: TREE_TRUNK_COLOR
+                });
+
+                // Add leaves
+                drawables.push({
+                    type: 'treeLeaves',
+                    x: x, y: y,
+                    screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
+                    screenY: leavesTopScreenY, // Use this for sorting
+                    zHeight: LEAVES_Z_HEIGHT,
+                    isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
+                    isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
+                    colors: tileColors[TILE_TYPE_TREE]
+                });
             }
         }
     }
-    // Draw player AFTER all tiles, to ensure it's on top
-    drawPlayer();
+
+    // Add player to drawables
+    // The player's effective screen Y for sorting should be based on their feet's screen Y
+    const playerScreenPos = isoToScreen(player.x, player.y);
+    const playerEffectiveScreenY = playerScreenPos.y + TILE_ISO_HEIGHT; // Bottom of the tile player is on
+    drawables.push({
+        type: 'player',
+        x: player.x, y: player.y, // Grid position for sorting ties
+        screenX: player.x, // Store grid positions
+        screenY: player.y, // for tie-breaking
+        sortY: playerEffectiveScreenY // The primary sort key for depth
+    });
+
+
+    // Sort drawables by their screenY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
+    drawables.sort((a, b) => {
+        // Primary sort by actual screen Y of their lowest point (or effective base)
+        if (a.sortY !== b.sortY) {
+            return a.sortY - b.sortY;
+        }
+        // Secondary sort by grid Y for items on the same screenY level
+        if (a.y !== b.y) {
+            return a.y - b.y;
+        }
+        // Tertiary sort by grid X for items on the same grid Y, same screenY level
+        return a.x - b.x;
+    });
+
+    // Draw all sorted entities
+    drawables.forEach(entity => {
+        if (entity.type === 'tile') {
+            drawIsometricDiamond(entity.colorSet, entity.screenX, entity.screenY);
+        } else if (entity.type === 'treeTrunk') {
+            drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
+        } else if (entity.type === 'treeLeaves') {
+            drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
+        } else if (entity.type === 'player') {
+            // Player's drawPlayer function uses player.x/y, which are interpolated.
+            // So we pass the interpolated values to the drawPlayer function.
+            drawPlayer(player.x, player.y);
+        }
+    });
 }
 
 // --- Movement Logic and Collision Detection ---
 function movePlayer(dx, dy) {
-    const newX = player.x + dx;
-    const newY = player.y + dy;
+    const newTargetX = player.targetX + dx;
+    const newTargetY = player.targetY + dy;
 
-    // Check map boundaries
-    if (newX >= 0 && newX < MAP_WIDTH && newY >= 0 && newY < MAP_HEIGHT) {
-        const targetTileType = gameMap[newY][newX];
+    // Check map boundaries for the target tile
+    if (newTargetX >= 0 && newTargetX < MAP_WIDTH && newTargetY >= 0 && newTargetY < MAP_HEIGHT) {
+        const targetTileType = gameMap[newTargetY][newTargetX];
 
         // Collision check: Cannot walk on water or trees
         if (targetTileType !== TILE_TYPE_LAKE_WATER && targetTileType !== TILE_TYPE_TREE) {
-            player.x = newX;
-            player.y = newY;
-            player.isMoving = true; // Start animation
+            player.targetX = newTargetX;
+            player.targetY = newTargetY;
+            player.isMoving = true; // Start interpolation and animation
             player.animationFrame = 0; // Reset animation frame
-            // No need to call draw() here immediately, the gameLoop will handle it
         } else {
             // console.log("Collision! Cannot move there.");
         }
@@ -374,18 +427,46 @@ function movePlayer(dx, dy) {
 
 // --- Game Loop ---
 function gameLoop() {
-    // Update animation frame if player is moving
-    if (player.isMoving) {
-        player.frameCount++;
-        if (player.frameCount % player.animationSpeed === 0) { // Update animation slower than game frames
-            player.animationFrame = (player.animationFrame + 1) % 4; // 4 frames for the cycle
-            if (player.animationFrame === 0) { // After a full cycle, assume move is "complete" for animation purposes
-                player.isMoving = false; // Stop animation until next move
-            }
+    // 1. Update Player Position (Interpolation)
+    // Check if current (x,y) is different from target (x,y)
+    if (player.x !== player.targetX || player.y !== player.targetY) {
+        player.isMoving = true;
+
+        // Move X
+        if (player.x < player.targetX) {
+            player.x = Math.min(player.x + player.moveSpeed, player.targetX);
+        } else if (player.x > player.targetX) {
+            player.x = Math.max(player.x - player.moveSpeed, player.targetX);
+        }
+
+        // Move Y
+        if (player.y < player.targetY) {
+            player.y = Math.min(player.y + player.moveSpeed, player.targetY);
+        } else if (player.y > player.targetY) {
+            player.y = Math.max(player.y - player.moveSpeed, player.targetY);
+        }
+
+        // Check if movement is complete (or very close)
+        if (Math.abs(player.x - player.targetX) < player.moveSpeed / 2 && Math.abs(player.y - player.targetY) < player.moveSpeed / 2) {
+            player.x = player.targetX; // Snap to target to prevent floating point issues
+            player.y = player.targetY;
+            player.isMoving = false; // Stop interpolation
+            player.animationFrame = 0; // Reset animation when movement stops
         }
     } else {
-        // If not moving, reset frame counter
-        player.frameCount = 0;
+        player.isMoving = false; // Ensure isMoving is false if at target
+    }
+
+
+    // 2. Update Animation Frame if moving
+    if (player.isMoving) {
+        player.frameCount++;
+        if (player.frameCount % player.animationSpeed === 0) {
+            player.animationFrame = (player.animationFrame + 1) % 4; // 4 frames for the cycle
+        }
+    } else {
+        player.frameCount = 0; // Reset frame counter when not moving
+        player.animationFrame = 0; // Ensure legs are static when not moving
     }
 
     draw(); // Always redraw the entire scene
@@ -396,9 +477,8 @@ function gameLoop() {
 
 // --- Keyboard Input Handling ---
 document.addEventListener('keydown', (event) => {
-    // Only allow new movement if not currently animating a move,
-    // or if you want continuous animation, remove this check.
-    if (!player.isMoving) { // This ensures the animation plays fully per step
+    // Only allow a new move command if player is not currently interpolating to a target
+    if (!player.isMoving) {
         switch (event.key.toLowerCase()) {
             case 'w': // Move Up-Left (isometric N/W)
                 movePlayer(0, -1);
@@ -438,6 +518,8 @@ document.body.appendChild(regenerateButton);
 
 regenerateButton.addEventListener('click', () => {
     generateMap(); // Generate a new map
+    player.x = player.targetX; // Snap player to current target position to avoid issues
+    player.y = player.targetY;
     player.isMoving = false; // Stop any ongoing animation
     player.animationFrame = 0; // Reset animation
     player.frameCount = 0; // Reset frame counter

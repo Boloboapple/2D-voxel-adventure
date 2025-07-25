@@ -39,7 +39,9 @@ const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2); // Shi
 // Debugging: Log calculated values
 console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
 console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`);
-
+console.log("------------------------------------------");
+console.log(">>> NEW SCRIPT VERSION LOADED - EXPECT FIXES! <<<"); // This will confirm load
+console.log("------------------------------------------");
 
 // --- Tile Type Definitions ---
 const TILE_TYPE_PLAINS = 0;
@@ -75,8 +77,7 @@ const player = {
 };
 
 // Define player body and leg dimensions relative to tile size
-// Adjusted to make room for legs
-const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8; // Further shortened body
+const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8;
 const PLAYER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
 const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
 
@@ -176,7 +177,7 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
 
     // Lift the player figure slightly above the tile's base for visual clarity
-    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5; // Lift player by half tile height
+    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5;
 
     // Calculate the top of the legs, which is where the body will sit
     // This ensures legs are drawn below the body and don't overlap as much
@@ -382,7 +383,9 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
                     colors: TREE_TRUNK_COLOR,
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT // Sort by the lowest point of the trunk
+                    // Sort by the lowest point of the trunk.
+                    // Player will be sorted between trunk and leaves
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT
                 });
 
                 // Add leaves
@@ -395,7 +398,8 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
                     colors: tileColors[TILE_TYPE_TREE], // Tree leaves use TILE_TYPE_TREE colors
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT + LEAVES_Z_HEIGHT // Sort by the lowest point of the leaves
+                    // Leaves have a higher sortY to be drawn after player and trunk
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT + LEAVES_Z_HEIGHT
                 });
             }
         }
@@ -404,12 +408,11 @@ function draw() {
     // Add player to drawables
     const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
 
-    // MODIFICATION HERE:
-    // We want the player to always draw AFTER the tile they are on.
-    // The tile's sortY is screenPos.y + TILE_ISO_HEIGHT.
-    // We add a small epsilon to the player's sortY to ensure it sorts after the tile
-    // when on the same conceptual ground plane.
-    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1; // Add a small epsilon
+    // Player's sortY:
+    // It's based on the base of the tile they are on + TILE_ISO_HEIGHT.
+    // Adding 0.1 ensures the player is drawn *just after* the tile itself, preventing the "under the grass" glitch.
+    // The player's Z-height is handled by drawPlayer, but for overall sorting, their conceptual "base" needs to be above the tile.
+    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1;
 
     drawables.push({
         type: 'player',
@@ -434,13 +437,7 @@ function draw() {
             return a.x - b.x;
         }
         // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
-        // Order: Tile -> Tree Trunk -> Player -> Tree Leaves
-        // MODIFIED: 'player' is now between 'treeTrunk' and 'treeLeaves'
-        // This means:
-        // - Tile (0) is always drawn first.
-        // - Tree Trunk (1) is drawn after tile.
-        // - Player (2) is drawn after tree trunk (appears in front of trunk).
-        // - Tree Leaves (3) are drawn after player (player appears under leaves).
+        // Order based on your request: Tile -> Tree Trunk -> Player -> Tree Leaves
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'player': 2, 'treeLeaves': 3 };
         return typeOrder[a.type] - typeOrder[b.type];
     });

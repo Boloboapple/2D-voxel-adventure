@@ -116,8 +116,9 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
 }
 
 
-// --- Map Generation Function (Same as before) ---
+// --- Map Generation Function ---
 function generateMap() {
+    // 1. Initialize entire map as plains
     gameMap = [];
     for (let y = 0; y < MAP_HEIGHT; y++) {
         gameMap[y] = [];
@@ -126,19 +127,61 @@ function generateMap() {
         }
     }
 
-    const lakeWidth = Math.floor(Math.random() * (MAP_WIDTH / 3)) + 3;
-    const lakeHeight = Math.floor(Math.random() * (MAP_HEIGHT / 3)) + 3;
-    const lakeStartX = Math.floor(Math.random() * (MAP_WIDTH - lakeWidth));
-    const lakeStartY = Math.floor(Math.random() * (MAP_HEIGHT - lakeHeight));
+    // 2. Generate Lake (using a more organic "blob" method)
+    const initialLakeSize = Math.floor(Math.random() * 5) + 3; // Start with a small blob of 3-7 tiles
+    const lakeIterations = 8; // Number of times the lake expands
+    const lakeGrowthChance = 0.5; // 50% chance for a neighbor to become water
+    const lakeShrinkChance = 0.05; // 5% chance for a water tile to revert (creates inlets/islands)
 
-    for (let y = lakeStartY; y < lakeStartY + lakeHeight; y++) {
-        for (let x = lakeStartX; x < lakeStartX + lakeWidth; x++) {
+    // Pick a random starting point for the lake
+    let lakeStartX = Math.floor(Math.random() * (MAP_WIDTH - initialLakeSize));
+    let lakeStartY = Math.floor(Math.random() * (MAP_HEIGHT - initialLakeSize));
+
+    // Create initial lake seed
+    for (let y = lakeStartY; y < lakeStartY + initialLakeSize; y++) {
+        for (let x = lakeStartX; x < lakeStartX + initialLakeSize; x++) {
             if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
                 gameMap[y][x] = TILE_TYPE_LAKE_WATER;
             }
         }
     }
 
+    // Expand lake iteratively
+    for (let i = 0; i < lakeIterations; i++) {
+        let newMapState = JSON.parse(JSON.stringify(gameMap)); // Create a copy to apply changes simultaneously
+        for (let y = 0; y < MAP_HEIGHT; y++) {
+            for (let x = 0; x < MAP_WIDTH; x++) {
+                if (gameMap[y][x] === TILE_TYPE_LAKE_WATER) {
+                    // Try to expand to neighbors
+                    const neighbors = [
+                        { dx: 0, dy: -1 }, // North
+                        { dx: 0, dy: 1 },  // South
+                        { dx: -1, dy: 0 }, // West
+                        { dx: 1, dy: 0 }   // East
+                    ];
+                    for (const neighbor of neighbors) {
+                        const nx = x + neighbor.dx;
+                        const ny = y + neighbor.dy;
+
+                        if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT) {
+                            if (gameMap[ny][nx] !== TILE_TYPE_LAKE_WATER && Math.random() < lakeGrowthChance) {
+                                newMapState[ny][nx] = TILE_TYPE_LAKE_WATER;
+                            }
+                        }
+                    }
+                    // Small chance for water to revert to land (for more irregular shapes/islands)
+                    if (Math.random() < lakeShrinkChance) {
+                        newMapState[y][x] = TILE_TYPE_PLAINS; // Or FOREST_GROUND if a forest is there
+                    }
+                }
+            }
+        }
+        gameMap = newMapState; // Update the map for the next iteration
+    }
+
+
+    // 3. Generate Forest Biome (covers a portion of remaining land)
+    // Existing logic for forest generation remains the same.
     const forestAreaWidth = Math.floor(Math.random() * (MAP_WIDTH / 2)) + 5;
     const forestAreaHeight = Math.floor(Math.random() * (MAP_HEIGHT / 2)) + 5;
     const forestStartX = Math.floor(Math.random() * (MAP_WIDTH - forestAreaWidth));
@@ -147,13 +190,15 @@ function generateMap() {
     for (let y = forestStartY; y < forestStartY + forestAreaHeight; y++) {
         for (let x = forestStartX; x < forestStartX + forestAreaWidth; x++) {
             if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
-                if (gameMap[y][x] !== TILE_TYPE_LAKE_WATER) {
+                if (gameMap[y][x] !== TILE_TYPE_LAKE_WATER) { // Don't overwrite water
                     gameMap[y][x] = TILE_TYPE_FOREST_GROUND;
                 }
             }
         }
     }
 
+    // 4. Place individual Trees within Forest_Ground tiles
+    // Existing logic for tree placement remains the same.
     const treeDensity = 0.3;
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
@@ -167,12 +212,10 @@ function generateMap() {
 }
 
 
-// --- Main Drawing Function ---
+// --- Main Drawing Function (No changes needed here for this request) ---
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the entire canvas
 
-    // Iterate through the map in drawing order (from top-left to bottom-right in isometric space)
-    // This ensures correct overlapping for isometric projection (painter's algorithm)
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tileType = gameMap[y][x];

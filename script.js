@@ -47,10 +47,22 @@ let gameMap = [];
 const player = {
     x: 0, // Player's X grid coordinate
     y: 0, // Player's Y grid coordinate
-    color: '#FFD700', // Gold color for the player
-    width: TILE_ISO_WIDTH * 0.4, // Player width (e.g., 40% of tile width)
-    height: TILE_ISO_HEIGHT * 1.5 // Player height (e.g., 1.5 times tile height for a simple sprite)
+    bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
+    legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
+    isMoving: false, // Flag to indicate if player is currently animating a move
+    animationFrame: 0, // Current frame of walking animation
+    animationSpeed: 5, // How many game frames per animation frame (lower = faster)
+    frameCount: 0 // Global frame counter for animation timing
 };
+
+// Define player body and leg dimensions relative to tile size
+const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5;
+const PLAYER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
+const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
+
+const PLAYER_LEG_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8; // Height of each leg segment
+const PLAYER_LEG_ISO_WIDTH = TILE_ISO_WIDTH * 0.2; // Width of each leg
+const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2; // Height of each leg's top diamond
 
 // --- Coordinate Conversion Function (Grid to Isometric Screen) ---
 // Returns the screen coordinates of the TOP-MIDDLE point of the isometric tile's top diamond
@@ -60,7 +72,7 @@ function isoToScreen(x, y) {
     return { x: screenX, y: screenY };
 }
 
-// --- Drawing Helper Functions ---
+// --- Drawing Helper Functions (No changes needed here for this request) ---
 
 // Draws an isometric diamond (like a flat ground tile)
 // screenX_top_middle, screenY_top_middle are the canvas coordinates of the top-middle vertex of the diamond
@@ -119,20 +131,62 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
     ctx.fill();
 }
 
-// Draws the player as a simple rectangle (or you can expand this to a simple isometric figure)
+// Draws the player as a simple 3D block figure with animated legs
 function drawPlayer() {
     const screenPos = isoToScreen(player.x, player.y);
 
-    // Calculate player's actual drawing position
-    // Center the player horizontally on the tile
-    const playerDrawX = screenPos.x + (TILE_ISO_WIDTH / 2) - (player.width / 2);
-    // Position player's feet at the bottom-middle of the tile, then shift up by player height
-    const playerDrawY = screenPos.y + TILE_ISO_HEIGHT - player.height;
+    // Animation offset for legs
+    let animOffsetA = 0; // For leg A (front-left in isometric, or right in a top-down view)
+    let animOffsetB = 0; // For leg B (back-right in isometric, or left in a top-down view)
 
-    ctx.fillStyle = player.color;
-    ctx.fillRect(playerDrawX, playerDrawY, player.width, player.height);
-    ctx.strokeStyle = '#000'; // Black border for visibility
-    ctx.strokeRect(playerDrawX, playerDrawY, player.width, player.height);
+    // A simple 4-frame animation cycle for walking
+    if (player.isMoving) {
+        const frame = player.animationFrame;
+        // Adjust leg Y position to simulate lifting
+        if (frame === 0) { animOffsetA = -TILE_ISO_HEIGHT * 0.1; animOffsetB = 0; }
+        else if (frame === 1) { animOffsetA = 0; animOffsetB = -TILE_ISO_HEIGHT * 0.1; }
+        else if (frame === 2) { animOffsetA = -TILE_ISO_HEIGHT * 0.1; animOffsetB = 0; }
+        else if (frame === 3) { animOffsetA = 0; animOffsetB = -TILE_ISO_HEIGHT * 0.1; }
+        // For a more complex animation, you could add more frames and sine/cosine waves for smooth motion.
+    }
+
+
+    // Calculate base position for the player figure
+    // Player's feet should be at the base of the tile (screenPos.y + TILE_ISO_HEIGHT)
+    // Then shift up by the total height of the player (body + leg height)
+    const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
+    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT; // Bottom of the body rests on top of legs
+
+    // Draw Body
+    drawIsometric3DBlock(
+        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
+        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2), // Top-middle Y of body's top diamond
+        PLAYER_BODY_Z_HEIGHT,
+        PLAYER_BODY_ISO_WIDTH,
+        PLAYER_BODY_ISO_HEIGHT,
+        player.bodyColor
+    );
+
+    // Draw Legs
+    // Leg A (front-left/right)
+    drawIsometric3DBlock(
+        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
+        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetA, // Top-middle Y of leg A's top diamond
+        PLAYER_LEG_Z_HEIGHT,
+        PLAYER_LEG_ISO_WIDTH,
+        PLAYER_LEG_ISO_HEIGHT,
+        player.legColor
+    );
+
+    // Leg B (back-right/left)
+    drawIsometric3DBlock(
+        screenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
+        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetB, // Top-middle Y of leg B's top diamond
+        PLAYER_LEG_Z_HEIGHT,
+        PLAYER_LEG_ISO_WIDTH,
+        PLAYER_LEG_ISO_HEIGHT,
+        player.legColor
+    );
 }
 
 
@@ -229,7 +283,6 @@ function generateMap() {
     }
 
     // 5. Place Player on a valid starting tile (Plains or Forest Ground)
-    // Find a random valid starting position for the player
     let placedPlayer = false;
     while (!placedPlayer) {
         const startX = Math.floor(Math.random() * MAP_WIDTH);
@@ -310,35 +363,65 @@ function movePlayer(dx, dy) {
         if (targetTileType !== TILE_TYPE_LAKE_WATER && targetTileType !== TILE_TYPE_TREE) {
             player.x = newX;
             player.y = newY;
-            draw(); // Redraw the map with the player in the new position
+            player.isMoving = true; // Start animation
+            player.animationFrame = 0; // Reset animation frame
+            // No need to call draw() here immediately, the gameLoop will handle it
         } else {
-            console.log("Collision! Cannot move there."); // For debugging
+            // console.log("Collision! Cannot move there.");
         }
     }
 }
 
+// --- Game Loop ---
+function gameLoop() {
+    // Update animation frame if player is moving
+    if (player.isMoving) {
+        player.frameCount++;
+        if (player.frameCount % player.animationSpeed === 0) { // Update animation slower than game frames
+            player.animationFrame = (player.animationFrame + 1) % 4; // 4 frames for the cycle
+            if (player.animationFrame === 0) { // After a full cycle, assume move is "complete" for animation purposes
+                player.isMoving = false; // Stop animation until next move
+            }
+        }
+    } else {
+        // If not moving, reset frame counter
+        player.frameCount = 0;
+    }
+
+    draw(); // Always redraw the entire scene
+
+    requestAnimationFrame(gameLoop); // Request next frame
+}
+
+
 // --- Keyboard Input Handling ---
 document.addEventListener('keydown', (event) => {
-    switch (event.key.toLowerCase()) {
-        case 'w': // Move Up-Left (isometric N/W)
-            movePlayer(0, -1);
-            break;
-        case 's': // Move Down-Right (isometric S/E)
-            movePlayer(0, 1);
-            break;
-        case 'a': // Move Down-Left (isometric S/W)
-            movePlayer(-1, 0);
-            break;
-        case 'd': // Move Up-Right (isometric N/E)
-            movePlayer(1, 0);
-            break;
+    // Only allow new movement if not currently animating a move,
+    // or if you want continuous animation, remove this check.
+    if (!player.isMoving) { // This ensures the animation plays fully per step
+        switch (event.key.toLowerCase()) {
+            case 'w': // Move Up-Left (isometric N/W)
+                movePlayer(0, -1);
+                break;
+            case 's': // Move Down-Right (isometric S/E)
+                movePlayer(0, 1);
+                break;
+            case 'a': // Move Down-Left (isometric S/W)
+                movePlayer(-1, 0);
+                break;
+            case 'd': // Move Up-Right (isometric N/E)
+                movePlayer(1, 0);
+                break;
+        }
     }
 });
 
 
 // --- Initial Setup ---
 generateMap(); // Generate the map once
-draw();        // Draw the generated map
+// Start the game loop
+requestAnimationFrame(gameLoop);
+
 
 // Optional: Add a button to generate a new map
 const regenerateButton = document.createElement('button');
@@ -355,5 +438,8 @@ document.body.appendChild(regenerateButton);
 
 regenerateButton.addEventListener('click', () => {
     generateMap(); // Generate a new map
-    draw();        // Redraw the new map
+    player.isMoving = false; // Stop any ongoing animation
+    player.animationFrame = 0; // Reset animation
+    player.frameCount = 0; // Reset frame counter
+    // The gameLoop will automatically redraw
 });

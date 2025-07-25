@@ -52,7 +52,7 @@ const player = {
     bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
     legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
     isMoving: false, // Flag to indicate if player is currently interpolating between tiles
-    moveSpeed: 0.1, // How fast player interpolates (0.01 - 1.0, larger is faster)
+    moveSpeed: 0.05, // How fast player interpolates (0.01 - 1.0, larger is faster) - DECREASED FOR SLOWER MOVEMENT
     animationFrame: 0, // Current frame of walking animation
     animationSpeed: 5, // How many game frames per animation frame (lower = faster)
     frameCount: 0 // Global frame counter for animation timing
@@ -60,7 +60,7 @@ const player = {
 
 // Define player body and leg dimensions relative to tile size
 // Adjusted to make room for legs
-const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 1.0; // Shortened body
+const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8; // Further shortened body
 const PLAYER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
 const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
 
@@ -154,24 +154,11 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
 
-
     // Calculate base position for the player figure
     // Player's feet should be at the base of the tile (screenPos.y + TILE_ISO_HEIGHT)
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
-    // Bottom of the body rests on top of legs
-    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT;
-
-    // Draw Body
-    drawIsometric3DBlock(
-        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
-        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2), // Top-middle Y of body's top diamond
-        PLAYER_BODY_Z_HEIGHT,
-        PLAYER_BODY_ISO_WIDTH,
-        PLAYER_BODY_ISO_HEIGHT,
-        player.bodyColor
-    );
-
-    // Draw Legs (positioned below the body, starting from the ground)
+    
+    // Draw Legs FIRST so the body overlaps them correctly
     // Leg A (front-left/right)
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
@@ -190,6 +177,19 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
         PLAYER_LEG_ISO_WIDTH,
         PLAYER_LEG_ISO_HEIGHT,
         player.legColor
+    );
+
+    // Draw Body SECOND, on top of the legs
+    // The bottom of the body should sit on top of the legs, which are PLAYER_LEG_Z_HEIGHT tall
+    const bodyBottomY = playerBaseY - PLAYER_LEG_Z_HEIGHT; 
+
+    drawIsometric3DBlock(
+        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
+        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2), // Top-middle Y of body's top diamond
+        PLAYER_BODY_Z_HEIGHT,
+        PLAYER_BODY_ISO_WIDTH,
+        PLAYER_BODY_ISO_HEIGHT,
+        player.bodyColor
     );
 }
 
@@ -318,7 +318,7 @@ function draw() {
                 x: x, y: y,
                 screenX: screenPos.x,
                 screenY: screenPos.y, // Use this for sorting
-                colorSet: groundColorSet
+                sortY: screenPos.y + TILE_ISO_HEIGHT // Sort by the lowest point of the tile
             });
 
             // If it's a tree, add its components as separate drawables
@@ -339,11 +339,12 @@ function draw() {
                     type: 'treeTrunk',
                     x: x, y: y,
                     screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
-                    screenY: trunkTopScreenY, // Use this for sorting
+                    screenY: trunkTopScreenY,
                     zHeight: TRUNK_Z_HEIGHT,
                     isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
-                    colors: TREE_TRUNK_COLOR
+                    colors: TREE_TRUNK_COLOR,
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT // Sort by the lowest point of the trunk
                 });
 
                 // Add leaves
@@ -351,41 +352,50 @@ function draw() {
                     type: 'treeLeaves',
                     x: x, y: y,
                     screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
-                    screenY: leavesTopScreenY, // Use this for sorting
+                    screenY: leavesTopScreenY,
                     zHeight: LEAVES_Z_HEIGHT,
                     isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
-                    colors: tileColors[TILE_TYPE_TREE]
+                    colors: tileColors[TILE_TYPE_TREE],
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT + LEAVES_Z_HEIGHT // Sort by the lowest point of the leaves
                 });
             }
         }
     }
 
     // Add player to drawables
-    // The player's effective screen Y for sorting should be based on their feet's screen Y
-    const playerScreenPos = isoToScreen(player.x, player.y);
-    const playerEffectiveScreenY = playerScreenPos.y + TILE_ISO_HEIGHT; // Bottom of the tile player is on
+    // The player's effective screen Y for sorting should be based on their feet's screen Y,
+    // which is the bottom of the tile they are currently *interpolated* on.
+    const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
+    const playerEffectiveScreenY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT;
     drawables.push({
         type: 'player',
-        x: player.x, y: player.y, // Grid position for sorting ties
-        screenX: player.x, // Store grid positions
-        screenY: player.y, // for tie-breaking
+        x: player.x, // Store interpolated positions for drawing
+        y: player.y,
         sortY: playerEffectiveScreenY // The primary sort key for depth
     });
 
 
-    // Sort drawables by their screenY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
+    // Sort drawables by their sortY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
+    // Note: For objects on the same tile, the order of drawing for player/tree parts on the same tile needs careful consideration
+    // For simplicity, we assume player should be drawn after the base tile, but before tree leaves on the same tile.
     drawables.sort((a, b) => {
         // Primary sort by actual screen Y of their lowest point (or effective base)
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        // Secondary sort by grid Y for items on the same screenY level
+        // Secondary sort by grid Y for items on the same sortY level (important for isometric depth)
         if (a.y !== b.y) {
             return a.y - b.y;
         }
-        // Tertiary sort by grid X for items on the same grid Y, same screenY level
-        return a.x - b.x;
+        // Tertiary sort by grid X for items on the same grid Y and sortY level
+        if (a.x !== b.x) {
+            return a.x - b.x;
+        }
+        // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
+        // Order: Tile -> Tree Trunk -> Player -> Tree Leaves (or whatever desired depth)
+        const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'player': 2, 'treeLeaves': 3 };
+        return typeOrder[a.type] - typeOrder[b.type];
     });
 
     // Draw all sorted entities
@@ -413,7 +423,7 @@ function movePlayer(dx, dy) {
     if (newTargetX >= 0 && newTargetX < MAP_WIDTH && newTargetY >= 0 && newTargetY < MAP_HEIGHT) {
         const targetTileType = gameMap[newTargetY][newTargetX];
 
-        // Collision check: Cannot walk on water or trees
+        // COLLISION FIX: Cannot walk on water or *any* tile where a tree exists
         if (targetTileType !== TILE_TYPE_LAKE_WATER && targetTileType !== TILE_TYPE_TREE) {
             player.targetX = newTargetX;
             player.targetY = newTargetY;
@@ -429,7 +439,7 @@ function movePlayer(dx, dy) {
 function gameLoop() {
     // 1. Update Player Position (Interpolation)
     // Check if current (x,y) is different from target (x,y)
-    if (player.x !== player.targetX || player.y !== player.targetY) {
+    if (Math.abs(player.x - player.targetX) > player.moveSpeed / 2 || Math.abs(player.y - player.targetY) > player.moveSpeed / 2) {
         player.isMoving = true;
 
         // Move X
@@ -447,7 +457,8 @@ function gameLoop() {
         }
 
         // Check if movement is complete (or very close)
-        if (Math.abs(player.x - player.targetX) < player.moveSpeed / 2 && Math.abs(player.y - player.targetY) < player.moveSpeed / 2) {
+        // Using a small epsilon for float comparison
+        if (Math.abs(player.x - player.targetX) < 0.01 && Math.abs(player.y - player.targetY) < 0.01) {
             player.x = player.targetX; // Snap to target to prevent floating point issues
             player.y = player.targetY;
             player.isMoving = false; // Stop interpolation

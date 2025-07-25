@@ -173,12 +173,17 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
     // Calculate base position for the player figure
     // Player's feet should be at the base of the tile (screenPos.y + TILE_ISO_HEIGHT)
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
-    
+
+    // *** MODIFICATION HERE: Raise the player slightly above the tile's base ***
+    // This shifts the player up by a fraction of the tile height,
+    // ensuring their lowest part remains visually above the ground tile.
+    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5; // Lift player by half tile height
+
     // Draw Legs FIRST so the body overlaps them correctly
     // Leg A (front-left/right)
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
-        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetA, // Top-middle Y of leg A's top diamond
+        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerLiftOffset + animOffsetA, // <-- APPLY OFFSET HERE
         PLAYER_LEG_Z_HEIGHT,
         PLAYER_LEG_ISO_WIDTH,
         PLAYER_LEG_ISO_HEIGHT,
@@ -188,7 +193,7 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
     // Leg B (back-right/left)
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
-        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetB, // Top-middle Y of leg B's top diamond
+        playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerLiftOffset + animOffsetB, // <-- APPLY OFFSET HERE
         PLAYER_LEG_Z_HEIGHT,
         PLAYER_LEG_ISO_WIDTH,
         PLAYER_LEG_ISO_HEIGHT,
@@ -201,7 +206,7 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
 
     drawIsometric3DBlock(
         screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
-        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2), // Top-middle Y of body's top diamond
+        bodyBottomY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2) - playerLiftOffset, // <-- APPLY OFFSET HERE
         PLAYER_BODY_Z_HEIGHT,
         PLAYER_BODY_ISO_WIDTH,
         PLAYER_BODY_ISO_HEIGHT,

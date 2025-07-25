@@ -325,16 +325,30 @@ function draw() {
             const tileType = gameMap[y][x];
             const screenPos = isoToScreen(x, y);
 
+            // Determine the correct color set for the ground tile
+            let groundColorSet;
+            if (tileType === TILE_TYPE_TREE) {
+                // If it's a tree tile, its ground is FOREST_GROUND
+                groundColorSet = tileColors[TILE_TYPE_FOREST_GROUND];
+            } else {
+                // Otherwise, use its own tile type color
+                groundColorSet = tileColors[tileType];
+            }
+
+            // Fallback: If for some reason a tile type is not defined in tileColors, use Plains
+            if (!groundColorSet) {
+                console.warn(`Warning: Missing color definition for tileType ${tileType}. Using PLAINS.`);
+                groundColorSet = tileColors[TILE_TYPE_PLAINS];
+            }
+
             // Add ground tile
-            const groundColorSet = tileColors[
-                tileType === TILE_TYPE_TREE ? TILE_TYPE_FOREST_GROUND : tileType
-            ] || tileColors[TILE_TYPE_PLAINS];
             drawables.push({
                 type: 'tile',
                 x: x, y: y,
                 screenX: screenPos.x,
                 screenY: screenPos.y, // Use this for sorting
-                sortY: screenPos.y + TILE_ISO_HEIGHT // Sort by the lowest point of the tile
+                sortY: screenPos.y + TILE_ISO_HEIGHT, // Sort by the lowest point of the tile
+                colorSet: groundColorSet // Pass the now-guaranteed colorSet
             });
 
             // If it's a tree, add its components as separate drawables
@@ -372,7 +386,7 @@ function draw() {
                     zHeight: LEAVES_Z_HEIGHT,
                     isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
-                    colors: tileColors[TILE_TYPE_TREE],
+                    colors: tileColors[TILE_TYPE_TREE], // Tree leaves use TILE_TYPE_TREE colors
                     sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT + LEAVES_Z_HEIGHT // Sort by the lowest point of the leaves
                 });
             }

@@ -13,17 +13,17 @@ const MAP_HEIGHT = 15; // Map height in tiles
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3; // Trunk (1.5) + Leaves (1.5)
 
-// Calculate canvas dimensions to fully contain the isometric map plus tall objects
-// The width calculation needs to account for the entire diamond spread of the map
-canvas.width = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_WIDTH / 2);
-// The height needs to account for the total depth plus the height of objects above the ground
-canvas.height = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_HEIGHT / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND;
+// Set canvas dimensions to be large enough to contain the full isometric map
+// and any tall objects without clipping. These values are generous.
+canvas.width = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_WIDTH / 2) + TILE_ISO_WIDTH * 2; // Added extra padding
+canvas.height = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_HEIGHT / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND + TILE_ISO_HEIGHT * 2; // Added extra padding
 
-// Global offset for the entire isometric drawing on the canvas
-// These values define where the (0,0) grid tile's top-middle point would appear if it were the *highest* and *left-most* tile.
-// We then adjust this to center the entire map visually.
-const globalDrawOffsetX = (canvas.width / 2) - ((MAP_WIDTH - MAP_HEIGHT) * TILE_ISO_WIDTH / 4); // Centers the map based on its overall diamond shape
-const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND; // Pushes the map down to leave space for tall objects at the top
+// --- IMPORTANT FIX: Global Offset for the Isometric Drawing ---
+// These offsets define where the (0,0) grid tile's top-middle point will be placed on the canvas.
+// We need to ensure it's not negative and leaves enough space for the entire map.
+// To move the map more to the right and down, we increase these values.
+const globalDrawOffsetX = (MAP_HEIGHT * TILE_ISO_WIDTH / 2) + 50; // Shift right to make space for leftmost map parts + padding
+const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + 50; // Shift down to make space for tree tops + padding
 
 // --- Tile Type Definitions ---
 const TILE_TYPE_PLAINS = 0;
@@ -44,7 +44,7 @@ const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; 
 let gameMap = [];
 
 // --- Coordinate Conversion Function (Grid to Isometric Screen) ---
-// Returns the screen coordinates of the TOP-MIDDLE point of the isometric tile
+// Returns the screen coordinates of the TOP-MIDDLE point of the isometric tile's top diamond
 function isoToScreen(x, y) {
     const screenX = (x - y) * (TILE_ISO_WIDTH / 2) + globalDrawOffsetX;
     const screenY = (x + y) * (TILE_ISO_HEIGHT / 2) + globalDrawOffsetY;
@@ -133,4 +133,115 @@ function generateMap() {
 
     for (let y = lakeStartY; y < lakeStartY + lakeHeight; y++) {
         for (let x = lakeStartX; x < lakeStartX + lakeWidth; x++) {
-            if (x >= 0 && x < MAP_
+            if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
+                gameMap[y][x] = TILE_TYPE_LAKE_WATER;
+            }
+        }
+    }
+
+    const forestAreaWidth = Math.floor(Math.random() * (MAP_WIDTH / 2)) + 5;
+    const forestAreaHeight = Math.floor(Math.random() * (MAP_HEIGHT / 2)) + 5;
+    const forestStartX = Math.floor(Math.random() * (MAP_WIDTH - forestAreaWidth));
+    const forestStartY = Math.floor(Math.random() * (MAP_HEIGHT - forestAreaHeight));
+
+    for (let y = forestStartY; y < forestStartY + forestAreaHeight; y++) {
+        for (let x = forestStartX; x < forestStartX + forestAreaWidth; x++) {
+            if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
+                if (gameMap[y][x] !== TILE_TYPE_LAKE_WATER) {
+                    gameMap[y][x] = TILE_TYPE_FOREST_GROUND;
+                }
+            }
+        }
+    }
+
+    const treeDensity = 0.3;
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+        for (let x = 0; x < MAP_WIDTH; x++) {
+            if (gameMap[y][x] === TILE_TYPE_FOREST_GROUND) {
+                if (Math.random() < treeDensity) {
+                    gameMap[y][x] = TILE_TYPE_TREE;
+                }
+            }
+        }
+    }
+}
+
+
+// --- Main Drawing Function ---
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the entire canvas
+
+    // Iterate through the map in drawing order (from top-left to bottom-right in isometric space)
+    // This ensures correct overlapping for isometric projection (painter's algorithm)
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+        for (let x = 0; x < MAP_WIDTH; x++) {
+            const tileType = gameMap[y][x];
+            const screenPos = isoToScreen(x, y); // Get top-middle screen coords of the ground tile
+
+            // Draw the ground tile first
+            const groundColorSet = tileColors[tileType] || tileColors[TILE_TYPE_PLAINS];
+            drawIsometricDiamond(groundColorSet, screenPos.x, screenPos.y);
+
+            // If it's a tree, draw the 3D tree components on top
+            if (tileType === TILE_TYPE_TREE) {
+                const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0; // Pixel height of the trunk block
+                const TRUNK_ISO_WIDTH_SCALE = 0.4; // Trunk is 40% width of a full tile
+                const TRUNK_ISO_HEIGHT_SCALE = 0.4; // Trunk's top diamond height
+
+                const LEAVES_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5; // Pixel height of the leaves block
+                const LEAVES_ISO_WIDTH_SCALE = 1.4; // Leaves are 140% width of a full tile (overhang)
+                const LEAVES_ISO_HEIGHT_SCALE = 1.4; // Leaves' top diamond height
+
+                // --- Draw Trunk ---
+                // Calculate the top-middle position of the TRUNK's top diamond face
+                // It sits directly on the ground tile (screenPos), and extends TRUNK_Z_HEIGHT upwards
+                const trunkTopScreenY = screenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
+
+                drawIsometric3DBlock(
+                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2), // Center trunk horizontally on the tile
+                    trunkTopScreenY,
+                    TRUNK_Z_HEIGHT,
+                    TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
+                    TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
+                    TREE_TRUNK_COLOR
+                );
+
+                // --- Draw Leaves ---
+                // Calculate the top-middle position of the LEAVES' top diamond face
+                // It sits on top of the trunk. Its base starts at the trunk's top diamond's base.
+                const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2); // Correctly position leaves above the trunk's top diamond
+                
+                drawIsometric3DBlock(
+                    screenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2), // Center leaves horizontally (may overhang)
+                    leavesTopScreenY,
+                    LEAVES_Z_HEIGHT,
+                    TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
+                    TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
+                    tileColors[TILE_TYPE_TREE] // Use green colors for leaves
+                );
+            }
+        }
+    }
+}
+
+// --- Initial Setup ---
+generateMap(); // Generate the map once
+draw();        // Draw the generated map
+
+// Optional: Add a button to generate a new map
+const regenerateButton = document.createElement('button');
+regenerateButton.textContent = 'Generate New Map';
+regenerateButton.style.marginTop = '20px';
+regenerateButton.style.padding = '10px 20px';
+regenerateButton.style.fontSize = '1em';
+regenerateButton.style.backgroundColor = '#61dafb';
+regenerateButton.style.color = '#282c34';
+regenerateButton.style.border = 'none';
+regenerateButton.style.borderRadius = '5px';
+regenerateButton.style.cursor = 'pointer';
+document.body.appendChild(regenerateButton);
+
+regenerateButton.addEventListener('click', () => {
+    generateMap(); // Generate a new map
+    draw();        // Redraw the new map
+});

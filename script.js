@@ -176,7 +176,7 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
 
     // Lift the player figure slightly above the tile's base for visual clarity
-    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5;
+    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5; // Lift player by half tile height
 
     // Calculate the top of the legs, which is where the body will sit
     // This ensures legs are drawn below the body and don't overlap as much
@@ -404,8 +404,12 @@ function draw() {
     // Add player to drawables
     const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
 
-    // Ensure player draws AFTER the tile they are on
-    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1; // Small epsilon for sorting on top of tile
+    // MODIFICATION HERE:
+    // We want the player to always draw AFTER the tile they are on.
+    // The tile's sortY is screenPos.y + TILE_ISO_HEIGHT.
+    // We add a small epsilon to the player's sortY to ensure it sorts after the tile
+    // when on the same conceptual ground plane.
+    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1; // Add a small epsilon
 
     drawables.push({
         type: 'player',

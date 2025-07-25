@@ -1,0 +1,22 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column; /* Stack elements vertically */
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background-color: #282c34;
+    color: #e0e0e0;
+}
+
+h1 {
+    color: #61dafb;
+    margin-bottom: 20px;
+}
+
+canvas {
+    border: 2px solid #61dafb; /* A nice border for your game window */
+    background-color: #3a404a; /* Background for areas not covered by tiles */
+    display: block; /* Remove any extra space below the canvas */
+}

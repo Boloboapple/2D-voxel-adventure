@@ -399,13 +399,15 @@ function draw() {
     }
 
     // Add player to drawables
-    // The player's effective screen Y for sorting should be based on their feet's screen Y,
-    // which is the bottom of the tile they are currently *interpolated* on.
     const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
-    // Use the base of the player's legs for sorting, which is at the same level as the tile's base.
-    // However, to ensure player is drawn *above* the ground tile, we might need a slight adjustment
-    // or rely entirely on the typeOrder for objects on the same 'sortY'.
-    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT; 
+
+    // MODIFICATION HERE:
+    // We want the player to always draw AFTER the tile they are on.
+    // The tile's sortY is screenPos.y + TILE_ISO_HEIGHT.
+    // We add a small epsilon to the player's sortY to ensure it sorts after the tile
+    // when on the same conceptual ground plane.
+    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1; // Add a small epsilon
+
     drawables.push({
         type: 'player',
         x: player.x, // Store interpolated positions for drawing

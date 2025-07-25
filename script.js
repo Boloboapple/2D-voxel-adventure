@@ -13,17 +13,33 @@ const MAP_HEIGHT = 15; // Map height in tiles
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3; // Trunk (1.5) + Leaves (1.5)
 
-// Set canvas dimensions to be large enough to contain the full isometric map
-// and any tall objects without clipping. These values are generous.
-canvas.width = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_WIDTH / 2) + TILE_ISO_WIDTH * 2; // Added extra padding
-canvas.height = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_HEIGHT / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND + TILE_ISO_HEIGHT * 2; // Added extra padding
+// Calculate required canvas dimensions based on map size and object height
+// The width needs to accommodate the full diagonal span of the isometric map.
+// The height needs to accommodate the vertical span of the map plus the height of the tallest object.
+const requiredCanvasWidth = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_WIDTH / 2);
+const requiredCanvasHeight = (MAP_WIDTH + MAP_HEIGHT) * (TILE_ISO_HEIGHT / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND;
 
-// --- IMPORTANT FIX: Global Offset for the Isometric Drawing ---
+// Add some padding to ensure nothing is clipped at the edges
+const paddingX = TILE_ISO_WIDTH * 2;
+const paddingY = TILE_ISO_HEIGHT * 2;
+
+canvas.width = requiredCanvasWidth + paddingX;
+canvas.height = requiredCanvasHeight + paddingY;
+
+// --- Global Offset for the Isometric Drawing ---
 // These offsets define where the (0,0) grid tile's top-middle point will be placed on the canvas.
 // We need to ensure it's not negative and leaves enough space for the entire map.
-// To move the map more to the right and down, we increase these values.
-const globalDrawOffsetX = (MAP_HEIGHT * TILE_ISO_WIDTH / 2) + 50; // Shift right to make space for leftmost map parts + padding
-const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + 50; // Shift down to make space for tree tops + padding
+// To center the map, we calculate the offset.
+// The top-left corner of the isometric projection of the map (0,0) is at:
+// X: MAP_HEIGHT * TILE_ISO_WIDTH / 2 (due to isometric skew)
+// Y: MAX_OBJECT_HEIGHT_FROM_GROUND (to make space for tallest objects above the top-left tile)
+const globalDrawOffsetX = (MAP_HEIGHT * TILE_ISO_WIDTH / 2) + (paddingX / 2); // Shift right to make space for leftmost map parts + padding
+const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2); // Shift down to make space for tree tops + padding
+
+// Debugging: Log calculated values
+console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
+console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`);
+
 
 // --- Tile Type Definitions ---
 const TILE_TYPE_PLAINS = 0;

@@ -346,9 +346,9 @@ function draw() {
                 type: 'tile',
                 x: x, y: y,
                 screenX: screenPos.x,
-                screenY: screenPos.y, // Use this for sorting
+                screenY: screenPos.y,
                 sortY: screenPos.y + TILE_ISO_HEIGHT, // Sort by the lowest point of the tile
-                colorSet: groundColorSet // Pass the now-guaranteed colorSet
+                colorSet: groundColorSet
             });
 
             // If it's a tree, add its components as separate drawables
@@ -397,18 +397,19 @@ function draw() {
     // The player's effective screen Y for sorting should be based on their feet's screen Y,
     // which is the bottom of the tile they are currently *interpolated* on.
     const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
-    const playerEffectiveScreenY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT;
+    // Use the base of the player's legs for sorting, which is at the same level as the tile's base.
+    // However, to ensure player is drawn *above* the ground tile, we might need a slight adjustment
+    // or rely entirely on the typeOrder for objects on the same 'sortY'.
+    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT; 
     drawables.push({
         type: 'player',
         x: player.x, // Store interpolated positions for drawing
         y: player.y,
-        sortY: playerEffectiveScreenY // The primary sort key for depth
+        sortY: playerEffectiveSortY // The primary sort key for depth
     });
 
 
     // Sort drawables by their sortY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
-    // Note: For objects on the same tile, the order of drawing for player/tree parts on the same tile needs careful consideration
-    // For simplicity, we assume player should be drawn after the base tile, but before tree leaves on the same tile.
     drawables.sort((a, b) => {
         // Primary sort by actual screen Y of their lowest point (or effective base)
         if (a.sortY !== b.sortY) {
@@ -423,7 +424,8 @@ function draw() {
             return a.x - b.x;
         }
         // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
-        // Order: Tile -> Tree Trunk -> Player -> Tree Leaves (or whatever desired depth)
+        // Order: Tile -> Tree Trunk -> Player -> Tree Leaves
+        // This order is crucial: player must be drawn AFTER tile, but BEFORE treeLeaves on the same tile.
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'player': 2, 'treeLeaves': 3 };
         return typeOrder[a.type] - typeOrder[b.type];
     });

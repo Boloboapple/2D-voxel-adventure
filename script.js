@@ -7,11 +7,11 @@ const TILE_ISO_WIDTH = 64; // Base unit for isometric scaling
 const TILE_ISO_HEIGHT = 32; // Base unit for isometric scaling
 
 // Define the logical "world size" in terms of how many "base units" it spans
-const WORLD_UNITS_WIDTH = 25; // You can adjust this value!
-const WORLD_UNITS_HEIGHT = 20; // You can adjust this value!
+const WORLD_UNITS_WIDTH = 60; // Increased size for a much larger world!
+const WORLD_UNITS_HEIGHT = 45; // Increased size for a much larger world!
 
-// Toggle to draw borders around ground patches (set to false as per your clarification)
-const DRAW_GROUND_BORDERS = false; // Set to false to hide visual borders
+// Toggle to draw borders around ground patches
+const DRAW_GROUND_BORDERS = false;
 const GROUND_BORDER_COLOR = '#000000';
 const GROUND_BORDER_THICKNESS = 1;
 
@@ -30,33 +30,39 @@ canvas.width = totalIsoProjectionWidth + paddingX;
 canvas.height = totalIsoProjectionHeight + paddingY + MAX_OBJECT_HEIGHT_FROM_GROUND;
 
 // --- Global Offset for the Isometric Drawing ---
-const globalDrawOffsetX = (WORLD_UNITS_HEIGHT * TILE_ISO_WIDTH / 2) + (paddingX / 2);
-const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2);
+// These offsets now define the center of the visible canvas area in world units
+// and will be adjusted by the camera position
+const initialGlobalDrawOffsetX = (WORLD_UNITS_HEIGHT * TILE_ISO_WIDTH / 2) + (paddingX / 2);
+const initialGlobalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2);
 
 // Debugging: Log calculated values
 console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
-console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`);
+console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${initialGlobalDrawOffsetY}`);
 
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 24; // <--- INCREMENTED TO 24 for collision detection
+const GAME_VERSION = 25; // <--- INCREMENTED TO 25 for expanded world, multiple biomes, camera
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
 
-// --- Colors for the single ground plane and biomes ---
-const GROUND_COLORS = { top: '#66BB6A', left: '#4CAF50', right: '#388E3C' }; // Plains green
-const LAKE_COLORS = { top: '#64B5F6', left: '#2196F3', right: '#1976D2' }; // Blue for lake water
-const FOREST_GROUND_COLORS = { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' }; // Darker green for forest ground
+// --- Colors for biomes and objects ---
+const BIOME_COLORS = {
+    'ground': { top: '#66BB6A', left: '#4CAF50', right: '#388E3C' }, // Plains green
+    'lake': { top: '#64B5F6', left: '#2196F3', right: '#1976D2' },   // Blue for lake water
+    'forest': { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' }, // Darker green for forest ground
+    'desert': { top: '#FFEB3B', left: '#FBC02D', right: '#F57F17' }, // Sandy yellow
+    'mountain': { top: '#B0BEC5', left: '#90A4AE', right: '#78909C' } // Grey for mountains (currently flat)
+};
 
 const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; // Brown for tree trunk
 const TREE_LEAVES_COLOR = { top: '#7CB342', left: '#689F38', right: '#558B2F' }; // Green for tree leaves
 
 // --- Player Object ---
 const player = {
-    x: WORLD_UNITS_WIDTH / 2, // Player's X world unit coordinate
-    y: WORLD_UNITS_HEIGHT / 2, // Player's Y world unit coordinate
+    x: WORLD_UNITS_WIDTH / 2,
+    y: WORLD_UNITS_HEIGHT / 2,
     bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
     legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
     isMoving: false,
@@ -77,6 +83,13 @@ const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
 
 const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
+// --- Camera Object ---
+const camera = {
+    x: player.x,
+    y: player.y,
+    smoothness: 0.05 // How smoothly the camera follows the player (0 to 1, higher is snappier)
+};
+
 // --- World Data Structure ---
 const worldMap = []; // Stores biome type for each (x,y) unit
 const trees = []; // Stores tree objects (x,y)
@@ -85,15 +98,19 @@ const trees = []; // Stores tree objects (x,y)
 const keysPressed = {};
 
 // --- Coordinate Conversion Function (World Unit to Isometric Screen) ---
+// Now takes camera position into account
 function isoToScreen(x, y) {
-    const screenX = (x - y) * (TILE_ISO_WIDTH / 2) + globalDrawOffsetX;
-    const screenY = (x + y) * (TILE_ISO_HEIGHT / 2) + globalDrawOffsetY;
+    // Calculate position relative to camera
+    const relativeX = x - camera.x;
+    const relativeY = y - camera.y;
+
+    // Apply isometric projection
+    const screenX = (relativeX - relativeY) * (TILE_ISO_WIDTH / 2) + initialGlobalDrawOffsetX;
+    const screenY = (relativeX + relativeY) * (TILE_ISO_HEIGHT / 2) + initialGlobalDrawOffsetY;
     return { x: screenX, y: screenY };
 }
 
 // --- Drawing Helper Functions ---
-
-// Draws an isometric diamond (like a flat ground plane or a biome patch)
 function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, isoWidth, isoHeight, drawBorder = false, borderColor = 'black', borderWidth = 1) {
     const halfIsoWidth = isoWidth / 2;
     const halfIsoHeight = isoHeight / 2;
@@ -115,7 +132,6 @@ function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, 
     }
 }
 
-// Draws an isometric 3D block
 function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeight, blockIsoWidth, blockIsoHeight, colors) {
     const halfBlockIsoWidth = blockIsoWidth / 2;
     const halfBlockIsoHeight = blockIsoHeight / 2;
@@ -161,7 +177,7 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
     const addTileToQueue = (x, y) => {
         const key = `${x},${y}`;
         if (x >= 0 && x < WORLD_UNITS_WIDTH && y >= 0 && y < WORLD_UNITS_HEIGHT &&
-            map[y][x] === 'ground' && !visited.has(key)) { // Only place on empty 'ground'
+            map[y][x] === 'ground' && !visited.has(key)) {
             map[y][x] = biomeType;
             visited.add(key);
             queue.push({ x, y });
@@ -209,40 +225,40 @@ function setupWorld() {
 
     trees.length = 0; // Clear previous trees
 
-    // Generate Lake Biome
-    const lakeStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
-    const lakeStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
-    const maxLakeTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.04);
-    generateOrganicBiome(worldMap, 'lake', lakeStartX, lakeStartY, maxLakeTiles, 0.6);
+    // Define biome types and their generation parameters
+    const biomesToGenerate = [
+        { type: 'lake', maxTilesFactor: 0.04, spreadChance: 0.6 },
+        { type: 'forest', maxTilesFactor: 0.12, spreadChance: 0.7 },
+        { type: 'desert', maxTilesFactor: 0.08, spreadChance: 0.65 },
+        { type: 'mountain', maxTilesFactor: 0.06, spreadChance: 0.55 } // Placeholder for mountains, currently just a color change
+    ];
 
-    // Generate Forest Biome
-    const forestStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
-    const forestStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
-    const maxForestTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.12);
-    generateOrganicBiome(worldMap, 'forest', forestStartX, forestStartY, maxForestTiles, 0.7);
-
+    biomesToGenerate.forEach(biomeConfig => {
+        const startX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
+        const startY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
+        const maxTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * biomeConfig.maxTilesFactor);
+        generateOrganicBiome(worldMap, biomeConfig.type, startX, startY, maxTiles, biomeConfig.spreadChance);
+    });
 
     // Place trees within the forest biome based on the generated worldMap
     const treeDensity = 0.4;
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
             if (worldMap[y][x] === 'forest' && Math.random() < treeDensity) {
-                // Store actual tree coordinates for collision detection later
                 trees.push({ x: x + Math.random(), y: y + Math.random() });
             }
         }
     }
 
-    // Place player at the center of the world, or on valid ground if center is a biome
+    // Place player at a valid starting position
     player.x = WORLD_UNITS_WIDTH / 2;
     player.y = WORLD_UNITS_HEIGHT / 2;
     let playerGridX = Math.floor(player.x);
     let playerGridY = Math.floor(player.y);
 
     // Ensure player starts on a 'ground' tile
-    if (worldMap[playerGridY] && (worldMap[playerGridY][playerGridX] === 'lake' || worldMap[playerGridY][playerGridX] === 'forest')) {
+    if (worldMap[playerGridY] && (worldMap[playerGridY][playerGridX] !== 'ground')) {
         let foundGround = false;
-        // Search for nearest ground tile in a spiral
         for (let radius = 1; radius < Math.max(WORLD_UNITS_WIDTH, WORLD_UNITS_HEIGHT); radius++) {
             for (let dy = -radius; dy <= radius; dy++) {
                 for (let dx = -radius; dx <= radius; dx++) {
@@ -265,6 +281,10 @@ function setupWorld() {
         }
     }
 
+    // Initialize camera to player's position
+    camera.x = player.x;
+    camera.y = player.y;
+
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;
@@ -275,35 +295,25 @@ function setupWorld() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.font = '24px Arial';
-    ctx.fillStyle = 'white';
-    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
-
     const drawables = [];
 
     // --- Add Ground Patches based on World Map ---
-    for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
-        for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
+    // Only draw patches visible within the camera's view
+    const viewWidthUnits = canvas.width / TILE_ISO_WIDTH * 2; // Approximate visible units
+    const viewHeightUnits = canvas.height / TILE_ISO_HEIGHT * 2;
+
+    const startGridX = Math.max(0, Math.floor(camera.x - viewWidthUnits / 2) - 2); // Add buffer
+    const endGridX = Math.min(WORLD_UNITS_WIDTH, Math.ceil(camera.x + viewWidthUnits / 2) + 2);
+    const startGridY = Math.max(0, Math.floor(camera.y - viewHeightUnits / 2) - 2);
+    const endGridY = Math.min(WORLD_UNITS_HEIGHT, Math.ceil(camera.y + viewHeightUnits / 2) + 2);
+
+    for (let y = startGridY; y < endGridY; y++) {
+        for (let x = startGridX; x < endGridX; x++) {
             const screenPos = isoToScreen(x, y);
 
-            let tileColors;
-            let isWater = false;
-            const biomeType = worldMap[y][x];
-
-            switch (biomeType) {
-                case 'ground':
-                    tileColors = GROUND_COLORS;
-                    break;
-                case 'lake':
-                    tileColors = LAKE_COLORS;
-                    isWater = true;
-                    break;
-                case 'forest':
-                    tileColors = FOREST_GROUND_COLORS;
-                    break;
-                default:
-                    tileColors = GROUND_COLORS;
-            }
+            const biomeType = worldMap[y] ? worldMap[y][x] : 'ground'; // Handle out of bounds gracefully
+            const tileColors = BIOME_COLORS[biomeType] || BIOME_COLORS['ground'];
+            const isWater = (biomeType === 'lake');
 
             drawables.push({
                 type: 'groundPatch',
@@ -324,42 +334,48 @@ function draw() {
     trees.forEach(tree => {
         const treeScreenPos = isoToScreen(tree.x, tree.y);
 
-        const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0;
-        const TRUNK_ISO_WIDTH_SCALE = 0.4;
-        const TRUNK_ISO_HEIGHT_SCALE = 0.4;
+        // Simple frustum culling for trees (only draw if roughly within screen bounds)
+        // This is a rough check and can be improved
+        if (treeScreenPos.x > -TILE_ISO_WIDTH * 2 && treeScreenPos.x < canvas.width + TILE_ISO_WIDTH * 2 &&
+            treeScreenPos.y > -MAX_OBJECT_HEIGHT_FROM_GROUND && treeScreenPos.y < canvas.height + TILE_ISO_HEIGHT * 2) {
 
-        const LEAVES_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5;
-        const LEAVES_ISO_WIDTH_SCALE = 1.4;
-        const LEAVES_ISO_HEIGHT_SCALE = 1.4;
+            const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0;
+            const TRUNK_ISO_WIDTH_SCALE = 0.4;
+            const TRUNK_ISO_HEIGHT_SCALE = 0.4;
 
-        const trunkTopScreenY = treeScreenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
-        const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
+            const LEAVES_Z_HEIGHT = TILE_ISO_HEIGHT * 1.5;
+            const LEAVES_ISO_WIDTH_SCALE = 1.4;
+            const LEAVES_ISO_HEIGHT_SCALE = 1.4;
 
-        const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT;
-        
-        drawables.push({
-            type: 'treeTrunk',
-            x: tree.x, y: tree.y,
-            screenX: treeScreenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
-            screenY: trunkTopScreenY,
-            zHeight: TRUNK_Z_HEIGHT,
-            isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
-            isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
-            colors: TREE_TRUNK_COLOR,
-            sortY: treeBaseScreenY + 0.001
-        });
+            const trunkTopScreenY = treeScreenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
+            const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
 
-        drawables.push({
-            type: 'treeLeaves',
-            x: tree.x, y: tree.y,
-            screenX: treeScreenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
-            screenY: leavesTopScreenY,
-            zHeight: LEAVES_Z_HEIGHT,
-            isoWidth: LEAVES_ISO_WIDTH_SCALE * TILE_ISO_WIDTH,
-            isoHeight: LEAVES_ISO_HEIGHT_SCALE * TILE_ISO_HEIGHT,
-            colors: TREE_LEAVES_COLOR,
-            sortY: treeBaseScreenY + 0.002
-        });
+            const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT;
+            
+            drawables.push({
+                type: 'treeTrunk',
+                x: tree.x, y: tree.y,
+                screenX: treeScreenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE / 2),
+                screenY: trunkTopScreenY,
+                zHeight: TRUNK_Z_HEIGHT,
+                isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
+                isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
+                colors: TREE_TRUNK_COLOR,
+                sortY: treeBaseScreenY + 0.001
+            });
+
+            drawables.push({
+                type: 'treeLeaves',
+                x: tree.x, y: tree.y,
+                screenX: treeScreenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
+                screenY: leavesTopScreenY,
+                zHeight: LEAVES_Z_HEIGHT,
+                isoWidth: LEAVES_ISO_WIDTH_SCALE * TILE_ISO_WIDTH,
+                isoHeight: LEAVES_ISO_HEIGHT_SCALE * TILE_ISO_HEIGHT,
+                colors: TREE_LEAVES_COLOR,
+                sortY: treeBaseScreenY + 0.002
+            });
+        }
     });
 
     // --- Add Player components to drawables ---
@@ -433,6 +449,11 @@ function draw() {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         }
     });
+
+    // --- Draw Version Number (always visible) ---
+    ctx.font = '24px Arial';
+    ctx.fillStyle = 'white';
+    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
 }
 
 // --- Game Loop ---
@@ -453,32 +474,38 @@ function gameLoop() {
         currentDx += 1;
     }
 
-    // Calculate potential new position without immediately applying it
-    let potentialNewX = player.x + currentDx * player.moveSpeed;
-    let potentialNewY = player.y + currentDy * player.moveSpeed;
+    if (currentDx !== 0 && currentDy !== 0) {
+        const diagonalFactor = 1 / Math.sqrt(2);
+        currentDx *= diagonalFactor;
+        currentDy *= diagonalFactor;
+    }
+
+    // Calculate potential new player position
+    let potentialNewPlayerX = player.x + currentDx * player.moveSpeed;
+    let potentialNewPlayerY = player.y + currentDy * player.moveSpeed;
 
     // --- Collision Detection Logic ---
     let collision = false;
 
     // Check world boundaries
-    if (potentialNewX < 0 || potentialNewX >= WORLD_UNITS_WIDTH ||
-        potentialNewY < 0 || potentialNewY >= WORLD_UNITS_HEIGHT) {
+    if (potentialNewPlayerX < 0 || potentialNewPlayerX >= WORLD_UNITS_WIDTH ||
+        potentialNewPlayerY < 0 || potentialNewPlayerY >= WORLD_UNITS_HEIGHT) {
         collision = true;
     } else {
         // Get the grid coordinates of the potential new position
-        const gridX = Math.floor(potentialNewX);
-        const gridY = Math.floor(potentialNewY);
+        const gridX = Math.floor(potentialNewPlayerX);
+        const gridY = Math.floor(potentialNewPlayerY);
 
-        // Check for collision with biomes (lake or forest)
+        // Check for collision with biomes (lake)
         if (worldMap[gridY] && worldMap[gridY][gridX]) {
             const biomeTypeAtNewPos = worldMap[gridY][gridX];
             if (biomeTypeAtNewPos === 'lake') {
                 collision = true; // Cannot walk on lake
             } else if (biomeTypeAtNewPos === 'forest') {
                 // Check if there's a specific tree at this forest tile
-                // This is a simplified check, ideally, you'd check against tree bounding boxes
-                const treePresent = trees.some(tree => 
-                    Math.floor(tree.x) === gridX && 
+                // This is a simplified check for a 'solid' tree tile
+                const treePresent = trees.some(tree =>
+                    Math.floor(tree.x) === gridX &&
                     Math.floor(tree.y) === gridY
                 );
                 if (treePresent) {
@@ -490,10 +517,9 @@ function gameLoop() {
 
     // Only update player position if no collision
     if (!collision) {
-        player.x = potentialNewX;
-        player.y = potentialNewY;
+        player.x = potentialNewPlayerX;
+        player.y = potentialNewPlayerY;
     }
-
 
     player.isMoving = (currentDx !== 0 || currentDy !== 0);
 
@@ -506,6 +532,11 @@ function gameLoop() {
         player.frameCount = 0;
         player.animationFrame = 0;
     }
+
+    // --- Camera Follow Logic ---
+    // Smoothly interpolate camera towards player's position
+    camera.x += (player.x - camera.x) * camera.smoothness;
+    camera.y += (player.y - camera.y) * camera.smoothness;
 
     draw();
 

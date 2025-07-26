@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 32; // <--- INCREMENTED TO 32 for verbose game loop and spawning debug
+const GAME_VERSION = 33; // <--- INCREMENTED TO 33 for non-stop spawning
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -87,11 +87,12 @@ const camera = {
 
 // --- Enemy Warrior Configuration ---
 const warriors = [];
-// TEMPORARY: Faster spawn for debugging!
-const WARRIOR_SPAWN_INTERVAL = 5 * 1000; // 5 seconds in milliseconds (was 30)
-let lastWarriorSpawnTime = 0;
+// *** CHANGE FOR NON-STOP SPAWNING ***
+const WARRIOR_SPAWN_INTERVAL = 100; // 100 milliseconds = spawn almost every frame
+// *** END CHANGE ***
+let lastWarriorSpawnTime = 0; // Will be initialized to 0 in setupWorld
 // TEMPORARY: More warriors for debugging!
-const MAX_WARRIORS = 15; // Increased max warriors (was 10)
+const MAX_WARRIORS = 50; // Increased max warriors even further
 
 const WARRIOR_AGGRO_RANGE = 5; // Distance in world units for player detection
 const WARRIOR_MOVE_SPEED = 0.03; // Warriors move slightly slower than player
@@ -352,7 +353,9 @@ function setupWorld() {
     player.animationFrame = 0;
     player.frameCount = 0;
 
-    lastWarriorSpawnTime = Date.now(); // Reset spawn timer
+    // *** CHANGE FOR NON-STOP SPAWNING ***
+    lastWarriorSpawnTime = 0; // Initialize to 0 to trigger immediate spawn on first loop
+    // *** END CHANGE ***
 }
 
 // --- Helper for collision detection ---
@@ -397,7 +400,7 @@ function spawnWarrior() {
 
     let spawnX, spawnY;
     let attempts = 0;
-    const maxAttempts = 1; // TEMPORARY: Reduced attempts to 1, we're forcing it
+    const maxAttempts = 1; // TEMPORARY: Still reduced to 1 for debugging
     let foundValidSpot = false;
 
     // Try to find a spawn location that is 'ground' and not too close to the player

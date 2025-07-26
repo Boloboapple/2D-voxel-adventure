@@ -10,10 +10,10 @@ const TILE_ISO_HEIGHT = 32; // Base unit for isometric scaling
 const WORLD_UNITS_WIDTH = 25; // You can adjust this value!
 const WORLD_UNITS_HEIGHT = 20; // You can adjust this value!
 
-// Toggle to draw borders around ground patches
-const DRAW_GROUND_BORDERS = true; // Set to true to see borders
-const GROUND_BORDER_COLOR = '#000000'; // Black border color
-const GROUND_BORDER_THICKNESS = 1; // 1 pixel border thickness
+// Toggle to draw borders around ground patches (set to false as per your clarification)
+const DRAW_GROUND_BORDERS = false; // Set to false to hide visual borders
+const GROUND_BORDER_COLOR = '#000000';
+const GROUND_BORDER_THICKNESS = 1;
 
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3;
@@ -40,7 +40,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 23; // <--- INCREMENTED TO 23 for configurable size and borders
+const GAME_VERSION = 24; // <--- INCREMENTED TO 24 for collision detection
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -78,8 +78,8 @@ const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
 const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
 // --- World Data Structure ---
-const worldMap = [];
-const trees = [];
+const worldMap = []; // Stores biome type for each (x,y) unit
+const trees = []; // Stores tree objects (x,y)
 
 // --- Keyboard Input State ---
 const keysPressed = {};
@@ -156,12 +156,12 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
 function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadChance) {
     const queue = [{ x: startX, y: startY }];
     let tilesPlaced = 0;
-    const visited = new Set(); // To prevent re-processing tiles
+    const visited = new Set();
 
     const addTileToQueue = (x, y) => {
         const key = `${x},${y}`;
         if (x >= 0 && x < WORLD_UNITS_WIDTH && y >= 0 && y < WORLD_UNITS_HEIGHT &&
-            map[y][x] === 'ground' && !visited.has(key)) {
+            map[y][x] === 'ground' && !visited.has(key)) { // Only place on empty 'ground'
             map[y][x] = biomeType;
             visited.add(key);
             queue.push({ x, y });
@@ -171,9 +171,7 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
         return false;
     };
 
-    // Attempt to place the initial tile
     if (addTileToQueue(startX, startY)) {
-        // Continue growing the biome
         let head = 0;
         while (head < queue.length && tilesPlaced < maxTiles) {
             const { x, y } = queue[head++];
@@ -182,7 +180,7 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
                 { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }, // Cardinal
                 { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }  // Diagonal
             ];
-            directions.sort(() => Math.random() - 0.5); // Shuffle for more organic spread
+            directions.sort(() => Math.random() - 0.5);
 
             for (const dir of directions) {
                 if (tilesPlaced >= maxTiles) break;
@@ -190,7 +188,7 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
                 const nx = x + dir.dx;
                 const ny = y + dir.dy;
 
-                if (Math.random() < spreadChance) { // Chance to spread to this neighbor
+                if (Math.random() < spreadChance) {
                     addTileToQueue(nx, ny);
                 }
             }
@@ -212,24 +210,25 @@ function setupWorld() {
     trees.length = 0; // Clear previous trees
 
     // Generate Lake Biome
-    const lakeStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2); // Start within middle 60%
+    const lakeStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
     const lakeStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
-    const maxLakeTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.04); // e.g., 4% of map size
-    generateOrganicBiome(worldMap, 'lake', lakeStartX, lakeStartY, maxLakeTiles, 0.6); // 60% spread chance
+    const maxLakeTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.04);
+    generateOrganicBiome(worldMap, 'lake', lakeStartX, lakeStartY, maxLakeTiles, 0.6);
 
     // Generate Forest Biome
     const forestStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
     const forestStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
-    const maxForestTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.12); // e.g., 12% of map size
-    generateOrganicBiome(worldMap, 'forest', forestStartX, forestStartY, maxForestTiles, 0.7); // 70% spread chance
+    const maxForestTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.12);
+    generateOrganicBiome(worldMap, 'forest', forestStartX, forestStartY, maxForestTiles, 0.7);
 
 
     // Place trees within the forest biome based on the generated worldMap
-    const treeDensity = 0.4; // 40% chance to place a tree in a forest unit square
+    const treeDensity = 0.4;
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
             if (worldMap[y][x] === 'forest' && Math.random() < treeDensity) {
-                trees.push({ x: x + Math.random(), y: y + Math.random() }); // Add slight random offset for natural look
+                // Store actual tree coordinates for collision detection later
+                trees.push({ x: x + Math.random(), y: y + Math.random() });
             }
         }
     }
@@ -237,23 +236,23 @@ function setupWorld() {
     // Place player at the center of the world, or on valid ground if center is a biome
     player.x = WORLD_UNITS_WIDTH / 2;
     player.y = WORLD_UNITS_HEIGHT / 2;
-    // Adjust player position if it lands on water initially
     let playerGridX = Math.floor(player.x);
     let playerGridY = Math.floor(player.y);
 
-    if (worldMap[playerGridY] && worldMap[playerGridY][playerGridX] === 'lake') {
+    // Ensure player starts on a 'ground' tile
+    if (worldMap[playerGridY] && (worldMap[playerGridY][playerGridX] === 'lake' || worldMap[playerGridY][playerGridX] === 'forest')) {
         let foundGround = false;
-        // Search in a spiral pattern outwards
+        // Search for nearest ground tile in a spiral
         for (let radius = 1; radius < Math.max(WORLD_UNITS_WIDTH, WORLD_UNITS_HEIGHT); radius++) {
             for (let dy = -radius; dy <= radius; dy++) {
                 for (let dx = -radius; dx <= radius; dx++) {
-                    if (Math.abs(dx) === radius || Math.abs(dy) === radius) { // Only check outer ring
+                    if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
                         const checkX = Math.floor(player.x) + dx;
                         const checkY = Math.floor(player.y) + dy;
                         if (checkX >= 0 && checkX < WORLD_UNITS_WIDTH &&
                             checkY >= 0 && checkY < WORLD_UNITS_HEIGHT &&
                             worldMap[checkY][checkX] === 'ground') {
-                            player.x = checkX + 0.5; // Center player on this patch
+                            player.x = checkX + 0.5;
                             player.y = checkY + 0.5;
                             foundGround = true;
                             break;
@@ -303,7 +302,7 @@ function draw() {
                     tileColors = FOREST_GROUND_COLORS;
                     break;
                 default:
-                    tileColors = GROUND_COLORS; // Fallback
+                    tileColors = GROUND_COLORS;
             }
 
             drawables.push({
@@ -315,7 +314,7 @@ function draw() {
                 isoHeight: TILE_ISO_HEIGHT,
                 colors: tileColors,
                 isWater: isWater,
-                sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // Ground patches are the base layer
+                sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0
             });
         }
     }
@@ -454,20 +453,47 @@ function gameLoop() {
         currentDx += 1;
     }
 
-    if (currentDx !== 0 && currentDy !== 0) {
-        const diagonalFactor = 1 / Math.sqrt(2);
-        currentDx *= diagonalFactor;
-        currentDy *= diagonalFactor;
+    // Calculate potential new position without immediately applying it
+    let potentialNewX = player.x + currentDx * player.moveSpeed;
+    let potentialNewY = player.y + currentDy * player.moveSpeed;
+
+    // --- Collision Detection Logic ---
+    let collision = false;
+
+    // Check world boundaries
+    if (potentialNewX < 0 || potentialNewX >= WORLD_UNITS_WIDTH ||
+        potentialNewY < 0 || potentialNewY >= WORLD_UNITS_HEIGHT) {
+        collision = true;
+    } else {
+        // Get the grid coordinates of the potential new position
+        const gridX = Math.floor(potentialNewX);
+        const gridY = Math.floor(potentialNewY);
+
+        // Check for collision with biomes (lake or forest)
+        if (worldMap[gridY] && worldMap[gridY][gridX]) {
+            const biomeTypeAtNewPos = worldMap[gridY][gridX];
+            if (biomeTypeAtNewPos === 'lake') {
+                collision = true; // Cannot walk on lake
+            } else if (biomeTypeAtNewPos === 'forest') {
+                // Check if there's a specific tree at this forest tile
+                // This is a simplified check, ideally, you'd check against tree bounding boxes
+                const treePresent = trees.some(tree => 
+                    Math.floor(tree.x) === gridX && 
+                    Math.floor(tree.y) === gridY
+                );
+                if (treePresent) {
+                    collision = true; // Cannot walk through a tree
+                }
+            }
+        }
     }
 
-    const potentialNewX = player.x + currentDx * player.moveSpeed;
-    const potentialNewY = player.y + currentDy * player.moveSpeed;
+    // Only update player position if no collision
+    if (!collision) {
+        player.x = potentialNewX;
+        player.y = potentialNewY;
+    }
 
-    const playerUnitWidth = PLAYER_BODY_ISO_WIDTH / TILE_ISO_WIDTH;
-    const playerUnitHeight = PLAYER_BODY_ISO_HEIGHT / TILE_ISO_HEIGHT;
-
-    player.x = Math.max(playerUnitWidth / 2, Math.min(WORLD_UNITS_WIDTH - playerUnitWidth / 2, potentialNewX));
-    player.y = Math.max(playerUnitHeight / 2, Math.min(WORLD_UNITS_HEIGHT - playerUnitHeight / 2, potentialNewY));
 
     player.isMoving = (currentDx !== 0 || currentDy !== 0);
 

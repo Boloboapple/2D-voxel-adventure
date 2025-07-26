@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 12; // <--- INCREMENTED TO 12 FOR REVISED PLAYER SORTING
+const GAME_VERSION = 13; // <--- INCREMENTED TO 13 FOR FREE MOVEMENT
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -70,12 +70,10 @@ let gameMap = [];
 const player = {
     x: 0, // Player's X grid coordinate (current interpolated position)
     y: 0, // Player's Y grid coordinate (current interpolated position)
-    targetX: 0, // Player's target X grid coordinate for movement
-    targetY: 0, // Player's target Y grid coordinate for movement
     bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
     legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
-    isMoving: false, // Flag to indicate if player is currently interpolating between tiles
-    moveSpeed: 0.05, // How fast player interpolates (0.01 - 1.0, larger is faster)
+    isMoving: false, // Flag to indicate if player is currently moving (any key pressed)
+    moveSpeed: 0.05, // How fast player moves (tiles per frame)
     animationFrame: 0, // Current frame of walking animation
     animationSpeed: 5, // How many game frames per animation frame (lower = faster)
     frameCount: 0 // Global frame counter for animation timing
@@ -94,6 +92,8 @@ const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2; // Height of each leg's top
 // This is for visual appeal, not sorting.
 const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
+// --- Keyboard Input State ---
+const keysPressed = {};
 
 // --- Coordinate Conversion Function (Grid to Isometric Screen) ---
 // Returns the screen coordinates of the TOP-MIDDLE point of the isometric tile's top diamond
@@ -257,8 +257,6 @@ function generateMap() {
         if (tileType === TILE_TYPE_PLAINS || tileType === TILE_TYPE_FOREST_GROUND) {
             player.x = startX;
             player.y = startY;
-            player.targetX = startX; // Initialize target to current position
-            player.targetY = startY; // Initialize target to current position
             placedPlayer = true;
         }
     }
@@ -462,62 +460,114 @@ function draw() {
     });
 }
 
-// --- Movement Logic and Collision Detection ---
-function movePlayer(dx, dy) {
-    const newTargetX = player.targetX + dx;
-    const newTargetY = player.targetY + dy;
-
-    // Check map boundaries for the target tile
-    if (newTargetX >= 0 && newTargetX < MAP_WIDTH && newTargetY >= 0 && newTargetY < MAP_HEIGHT) {
-        const targetTileType = gameMap[newTargetY][newTargetX];
-
-        // COLLISION FIX: Cannot walk on water or *any* tile where a tree exists
-        if (targetTileType !== TILE_TYPE_LAKE_WATER && targetTileType !== TILE_TYPE_TREE) {
-            player.targetX = newTargetX;
-            player.targetY = newTargetY;
-            player.isMoving = true; // Start interpolation and animation
-            player.animationFrame = 0; // Reset animation frame
-        } else {
-            // console.log("Collision! Cannot move there.");
-        }
-    }
-}
-
 // --- Game Loop ---
 function gameLoop() {
-    // 1. Update Player Position (Interpolation)
-    // Check if current (x,y) is different from target (x,y)
-    if (Math.abs(player.x - player.targetX) > player.moveSpeed / 2 || Math.abs(player.y - player.targetY) > player.moveSpeed / 2) {
-        player.isMoving = true;
+    // 1. Handle Player Movement (Free Movement)
+    let currentDx = 0; // Desired movement in X grid units
+    let currentDy = 0; // Desired movement in Y grid units
 
-        // Move X
-        if (player.x < player.targetX) {
-            player.x = Math.min(player.x + player.moveSpeed, player.targetX);
-        } else if (player.x > player.targetX) {
-            player.x = Math.max(player.x - player.moveSpeed, player.targetX);
-        }
-
-        // Move Y
-        if (player.y < player.targetY) {
-            player.y = Math.min(player.y + player.moveSpeed, player.targetY);
-        } else if (player.y > player.targetY) {
-            player.y = Math.max(player.y - player.moveSpeed, player.targetY);
-        }
-
-        // Check if movement is complete (or very close)
-        // Using a small epsilon for float comparison
-        if (Math.abs(player.x - player.targetX) < 0.01 && Math.abs(player.y - player.targetY) < 0.01) {
-            player.x = player.targetX; // Snap to target to prevent floating point issues
-            player.y = player.targetY;
-            player.isMoving = false; // Stop interpolation
-            player.animationFrame = 0; // Reset animation when movement stops
-        }
-    } else {
-        player.isMoving = false; // Ensure isMoving is false if at target
+    if (keysPressed['w']) { // Move Up-Left (isometric N/W)
+        currentDy -= 1;
+    }
+    if (keysPressed['s']) { // Move Down-Right (isometric S/E)
+        currentDy += 1;
+    }
+    if (keysPressed['a']) { // Move Down-Left (isometric S/W)
+        currentDx -= 1;
+    }
+    if (keysPressed['d']) { // Move Up-Right (isometric N/E)
+        currentDx += 1;
     }
 
+    // Normalize diagonal movement speed (optional but good practice)
+    // If moving diagonally, currentDx and currentDy would both be 1 or -1,
+    // leading to faster movement. Normalize by dividing by sqrt(2).
+    if (currentDx !== 0 && currentDy !== 0) {
+        const diagonalFactor = 1 / Math.sqrt(2);
+        currentDx *= diagonalFactor;
+        currentDy *= diagonalFactor;
+    }
 
-    // 2. Update Animation Frame if moving
+    // Calculate potential new position
+    const potentialNewX = player.x + currentDx * player.moveSpeed;
+    const potentialNewY = player.y + currentDy * player.moveSpeed;
+
+    // --- Collision Detection for Free Movement ---
+    // Player's conceptual collision box (relative to its center)
+    // Adjust these values to make the player "thinner" or "wider" for collision
+    const playerCollisionWidth = 0.5; // Player occupies 50% of tile width for collision
+    const playerCollisionHeight = 0.5; // Player occupies 50% of tile height for collision
+
+    let canMoveX = true;
+    let canMoveY = true;
+
+    // Check X movement
+    if (currentDx !== 0) {
+        // Determine the horizontal bounds of the player's potential collision box
+        const testLeft = (currentDx > 0) ? player.x - playerCollisionWidth / 2 : potentialNewX - playerCollisionWidth / 2;
+        const testRight = (currentDx > 0) ? potentialNewX + playerCollisionWidth / 2 : player.x + playerCollisionWidth / 2;
+
+        // Iterate through all Y-rows the player covers
+        for (let yOffset = 0; yOffset < 1; yOffset += 0.5) { // Check top and bottom half of player collision vertically
+            const checkY = Math.floor(potentialNewY - playerCollisionHeight / 2 + (playerCollisionHeight * yOffset));
+
+            // Check the leading edge for X movement
+            const checkX = Math.floor((currentDx > 0) ? testRight : testLeft);
+
+            if (checkX < 0 || checkX >= MAP_WIDTH || checkY < 0 || checkY >= MAP_HEIGHT) {
+                canMoveX = false; // Collides with map boundary
+                break;
+            }
+            const tileType = gameMap[checkY][checkX];
+            if (tileType === TILE_TYPE_LAKE_WATER || tileType === TILE_TYPE_TREE) {
+                canMoveX = false;
+                break;
+            }
+        }
+    }
+
+    // Check Y movement
+    if (currentDy !== 0) {
+        // Determine the vertical bounds of the player's potential collision box
+        const testTop = (currentDy > 0) ? player.y - playerCollisionHeight / 2 : potentialNewY - playerCollisionHeight / 2;
+        const testBottom = (currentDy > 0) ? potentialNewY + playerCollisionHeight / 2 : player.y + playerCollisionHeight / 2;
+
+        // Iterate through all X-columns the player covers
+        for (let xOffset = 0; xOffset < 1; xOffset += 0.5) { // Check left and right half of player collision horizontally
+            const checkX = Math.floor(potentialNewX - playerCollisionWidth / 2 + (playerCollisionWidth * xOffset));
+
+            // Check the leading edge for Y movement
+            const checkY = Math.floor((currentDy > 0) ? testBottom : testTop);
+
+            if (checkX < 0 || checkX >= MAP_WIDTH || checkY < 0 || checkY >= MAP_HEIGHT) {
+                canMoveY = false; // Collides with map boundary
+                break;
+            }
+            const tileType = gameMap[checkY][checkX];
+            if (tileType === TILE_TYPE_LAKE_WATER || tileType === TILE_TYPE_TREE) {
+                canMoveY = false;
+                break;
+            }
+        }
+    }
+
+    // Apply movement only if no collision in that direction
+    if (canMoveX) {
+        player.x = potentialNewX;
+    }
+    if (canMoveY) {
+        player.y = potentialNewY;
+    }
+
+    // Ensure player stays within map bounds (final clamp)
+    player.x = Math.max(0 + playerCollisionWidth / 2, Math.min(MAP_WIDTH - playerCollisionWidth / 2, player.x));
+    player.y = Math.max(0 + playerCollisionHeight / 2, Math.min(MAP_HEIGHT - playerCollisionHeight / 2, player.y));
+
+
+    // Update isMoving flag and animation
+    player.isMoving = (currentDx !== 0 || currentDy !== 0);
+
+    // Animation update
     if (player.isMoving) {
         player.frameCount++;
         if (player.frameCount % player.animationSpeed === 0) {
@@ -536,23 +586,11 @@ function gameLoop() {
 
 // --- Keyboard Input Handling ---
 document.addEventListener('keydown', (event) => {
-    // Only allow a new move command if player is not currently interpolating to a target
-    if (!player.isMoving) {
-        switch (event.key.toLowerCase()) {
-            case 'w': // Move Up-Left (isometric N/W)
-                movePlayer(0, -1);
-                break;
-            case 's': // Move Down-Right (isometric S/E)
-                movePlayer(0, 1);
-                break;
-            case 'a': // Move Down-Left (isometric S/W)
-                movePlayer(-1, 0);
-                break;
-            case 'd': // Move Up-Right (isometric N/E)
-                movePlayer(1, 0);
-                break;
-        }
-    }
+    keysPressed[event.key.toLowerCase()] = true;
+});
+
+document.addEventListener('keyup', (event) => {
+    keysPressed[event.key.toLowerCase()] = false;
 });
 
 
@@ -577,8 +615,19 @@ document.body.appendChild(regenerateButton);
 
 regenerateButton.addEventListener('click', () => {
     generateMap(); // Generate a new map
-    player.x = player.targetX; // Snap player to current target position to avoid issues
-    player.y = player.targetY;
+    // Reset player position to a valid starting tile on the new map
+    let placedPlayer = false;
+    while (!placedPlayer) {
+        const startX = Math.floor(Math.random() * MAP_WIDTH);
+        const startY = Math.floor(Math.random() * MAP_HEIGHT);
+        const tileType = gameMap[startY][startX];
+
+        if (tileType === TILE_TYPE_PLAINS || tileType === TILE_TYPE_FOREST_GROUND) {
+            player.x = startX;
+            player.y = startY;
+            placedPlayer = true;
+        }
+    }
     player.isMoving = false; // Stop any ongoing animation
     player.animationFrame = 0; // Reset animation
     player.frameCount = 0; // Reset frame counter

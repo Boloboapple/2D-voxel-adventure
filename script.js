@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 30; // <--- INCREMENTED TO 30 for additional spawning debug logs
+const GAME_VERSION = 32; // <--- INCREMENTED TO 32 for verbose game loop and spawning debug
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -397,7 +397,7 @@ function spawnWarrior() {
 
     let spawnX, spawnY;
     let attempts = 0;
-    const maxAttempts = 100;
+    const maxAttempts = 1; // TEMPORARY: Reduced attempts to 1, we're forcing it
     let foundValidSpot = false;
 
     // Try to find a spawn location that is 'ground' and not too close to the player
@@ -416,13 +416,15 @@ function spawnWarrior() {
         console.log(`Attempt ${attempts}: Spawn at (${gridX},${gridY}). Walkable: ${walkableResult}. Distance to player: ${distanceToPlayer.toFixed(2)}. Far enough: ${farEnough}`);
 
 
-        if (walkableResult && farEnough) {
-            foundValidSpot = true;
-        }
+        // *** TEMPORARY DEBUGGING CHANGE: FORCE VALID SPOT ***
+        foundValidSpot = true; // THIS LINE FORCES A VALID SPOT FOR DEBUGGING
+        // *** END TEMPORARY DEBUGGING CHANGE ***
+
         attempts++;
     }
 
     if (!foundValidSpot) {
+        // This 'if' block should now almost never be hit with foundValidSpot = true
         console.warn(`Could not find suitable spawn location for warrior after ${maxAttempts} attempts. Map might be too full or player position too central.`);
         return;
     }
@@ -508,7 +510,7 @@ function updateWarriors() {
                     const randomOffsetMagnitude = Math.random() * 3 + 1;
                     const randomAngle = Math.random() * Math.PI * 2;
                     const targetCandidateX = warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude; // Don't floor yet, keep float for target
-                    const targetCandidateY = warrior.y + Math.sin(randomAngle) * Math.random() * randomOffsetMagnitude;
+                    const targetCandidateY = warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude;
 
                     // Check if the destination tile is walkable (using floor for grid lookup)
                     if (isWalkable(Math.floor(targetCandidateX), Math.floor(targetCandidateY))) {
@@ -668,17 +670,15 @@ function draw() {
         const warriorScreenPos = isoToScreen(warrior.x, warrior.y);
         const warriorSortY = warriorScreenPos.y + TILE_ISO_HEIGHT + CHARACTER_LEG_Z_HEIGHT + CHARACTER_BODY_Z_HEIGHT;
 
-        // Basic frustum culling for warriors too
-        if (warriorScreenPos.x + TILE_ISO_WIDTH > 0 && warriorScreenPos.x < canvas.width &&
-            warriorScreenPos.y + CHARACTER_BODY_Z_HEIGHT + CHARACTER_LEG_Z_HEIGHT > 0 && warriorScreenPos.y < canvas.height + TILE_ISO_HEIGHT) {
+        // *** TEMPORARY: CULLING COMMENTED OUT FOR DEBUGGING ***
+        // if (warriorScreenPos.x + TILE_ISO_WIDTH > 0 && warriorScreenPos.x < canvas.width &&
+        //     warriorScreenPos.y + CHARACTER_BODY_Z_HEIGHT + CHARACTER_LEG_Z_HEIGHT > 0 && warriorScreenPos.y < canvas.height + TILE_ISO_HEIGHT) {
             drawCharacter(warrior, warriorScreenPos, warriorSortY);
 
             // --- DEBUGGING VISUALS FOR WARRIORS ---
             // Draw aggro range
             ctx.strokeStyle = warrior.state === WARRIOR_STATE.CHASING ? 'red' : 'rgba(255, 165, 0, 0.5)'; // Orange if idle, red if chasing
             ctx.beginPath();
-            // Convert world aggro range to screen pixels (approximate, for visual only)
-            // This calculation is a simplification for visual representation
             const aggroRangeScreen = warrior.aggroRange * (TILE_ISO_WIDTH / 2) * 1.5; 
             ctx.arc(warriorScreenPos.x + TILE_ISO_WIDTH / 2, warriorScreenPos.y + TILE_ISO_HEIGHT / 2, aggroRangeScreen, 0, Math.PI * 2);
             ctx.stroke();
@@ -698,7 +698,7 @@ function draw() {
                 ctx.fillStyle = 'blue';
                 ctx.fillRect(targetScreenPos.x + TILE_ISO_WIDTH / 2 - 3, targetScreenPos.y + TILE_ISO_HEIGHT / 2 - 3, 6, 6);
             }
-        }
+        // } // END TEMPORARY: CULLING COMMENTED OUT
     });
 
 
@@ -740,7 +740,15 @@ function draw() {
 
 // --- Game Loop ---
 function gameLoop(currentTime) {
-    // console.log("Game loop running. CurrentTime:", currentTime); // TEMPORARY: Verify game loop is active
+    // *** TEMPORARY: VERY VERBOSE LOGGING FOR DEBUGGING TIMING ***
+    console.log("------------------------------------------");
+    console.log(`Game loop running. CurrentTime: ${currentTime.toFixed(2)}`);
+    console.log(`Last Warrior Spawn Time: ${lastWarriorSpawnTime.toFixed(2)}`);
+    console.log(`Time Since Last Spawn: ${(currentTime - lastWarriorSpawnTime).toFixed(2)} ms`);
+    console.log(`Warrior Spawn Interval: ${WARRIOR_SPAWN_INTERVAL} ms`);
+    console.log(`Condition (Time Since Last Spawn > Interval): ${(currentTime - lastWarriorSpawnTime) > WARRIOR_SPAWN_INTERVAL}`);
+    console.log("------------------------------------------");
+    // *** END TEMPORARY VERBOSE LOGGING ***
 
     let currentDx = 0;
     let currentDy = 0;
@@ -789,18 +797,13 @@ function gameLoop(currentTime) {
     camera.y = player.y;
 
     // --- Warrior Spawning Logic ---
-    // console.log(`CurrentTime: ${currentTime}, LastSpawnTime: ${lastWarriorSpawnTime}, Interval: ${WARRIOR_SPAWN_INTERVAL}`); // Uncomment for extreme detail
-    // console.log(`Time since last spawn: ${currentTime - lastWarriorSpawnTime}`); // Uncomment for extreme detail
-
-
     if (currentTime - lastWarriorSpawnTime > WARRIOR_SPAWN_INTERVAL) {
         console.log(`--- Attempting to spawn warrior! Time elapsed: ${currentTime - lastWarriorSpawnTime} ms ---`);
         spawnWarrior();
         lastWarriorSpawnTime = currentTime;
     } else {
-        // console.log("Not yet time to spawn warrior."); // Too verbose for general use
+        // console.log("Not yet time to spawn warrior."); // No need for this, the verbose log above covers it.
     }
-
 
     // --- Update Warrior Logic ---
     updateWarriors();

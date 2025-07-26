@@ -7,8 +7,13 @@ const TILE_ISO_WIDTH = 64; // Base unit for isometric scaling
 const TILE_ISO_HEIGHT = 32; // Base unit for isometric scaling
 
 // Define the logical "world size" in terms of how many "base units" it spans
-const WORLD_UNITS_WIDTH = 40; // Increased size for more visible biomes
-const WORLD_UNITS_HEIGHT = 30; // Increased size for more visible biomes
+const WORLD_UNITS_WIDTH = 25; // You can adjust this value!
+const WORLD_UNITS_HEIGHT = 20; // You can adjust this value!
+
+// Toggle to draw borders around ground patches
+const DRAW_GROUND_BORDERS = true; // Set to true to see borders
+const GROUND_BORDER_COLOR = '#000000'; // Black border color
+const GROUND_BORDER_THICKNESS = 1; // 1 pixel border thickness
 
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3;
@@ -35,7 +40,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 22; // <--- INCREMENTED TO 22 for random, organic biomes
+const GAME_VERSION = 23; // <--- INCREMENTED TO 23 for configurable size and borders
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -73,15 +78,13 @@ const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
 const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
 // --- World Data Structure ---
-// This 2D array will store the biome type for each (x,y) world unit
 const worldMap = [];
-const trees = []; // Trees will be placed based on the worldMap
+const trees = [];
 
 // --- Keyboard Input State ---
 const keysPressed = {};
 
 // --- Coordinate Conversion Function (World Unit to Isometric Screen) ---
-// Returns the screen coordinates of the TOP-MIDDLE point of the isometric "unit"
 function isoToScreen(x, y) {
     const screenX = (x - y) * (TILE_ISO_WIDTH / 2) + globalDrawOffsetX;
     const screenY = (x + y) * (TILE_ISO_HEIGHT / 2) + globalDrawOffsetY;
@@ -91,9 +94,7 @@ function isoToScreen(x, y) {
 // --- Drawing Helper Functions ---
 
 // Draws an isometric diamond (like a flat ground plane or a biome patch)
-// screenX_top_middle, screenY_top_middle are the canvas coordinates of the top-middle vertex of the diamond
-// isoWidth and isoHeight define the dimensions of this specific diamond
-function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, isoWidth, isoHeight) {
+function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, isoWidth, isoHeight, drawBorder = false, borderColor = 'black', borderWidth = 1) {
     const halfIsoWidth = isoWidth / 2;
     const halfIsoHeight = isoHeight / 2;
 
@@ -106,6 +107,12 @@ function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, 
     ctx.lineTo(screenX_top_middle + halfIsoWidth, screenY_top_middle + isoHeight); // Bottom middle
     ctx.closePath();
     ctx.fill();
+
+    if (drawBorder) {
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = borderWidth;
+        ctx.stroke();
+    }
 }
 
 // Draws an isometric 3D block
@@ -146,56 +153,47 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
 
 
 // --- Biome Generation Helper Functions ---
-
-function create2DArray(width, height, defaultValue) {
-    const array = new Array(height);
-    for (let y = 0; y < height; y++) {
-        array[y] = new Array(width).fill(defaultValue);
-    }
-    return array;
-}
-
-// Simple "random walk" or "cellular automata" for organic shapes
-function generateOrganicBiome(map, biomeType, startX, startY, maxTiles) {
+function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadChance) {
     const queue = [{ x: startX, y: startY }];
     let tilesPlaced = 0;
+    const visited = new Set(); // To prevent re-processing tiles
 
-    // Set initial tile if within bounds
-    if (startX >= 0 && startX < WORLD_UNITS_WIDTH && startY >= 0 && startY < WORLD_UNITS_HEIGHT) {
-        if (map[startY][startX] === 'ground') { // Only place on empty ground
-            map[startY][startX] = biomeType;
+    const addTileToQueue = (x, y) => {
+        const key = `${x},${y}`;
+        if (x >= 0 && x < WORLD_UNITS_WIDTH && y >= 0 && y < WORLD_UNITS_HEIGHT &&
+            map[y][x] === 'ground' && !visited.has(key)) {
+            map[y][x] = biomeType;
+            visited.add(key);
+            queue.push({ x, y });
             tilesPlaced++;
+            return true;
         }
-    }
+        return false;
+    };
 
-    const directions = [
-        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }, // Cardinal
-        { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }  // Diagonal
-    ];
+    // Attempt to place the initial tile
+    if (addTileToQueue(startX, startY)) {
+        // Continue growing the biome
+        let head = 0;
+        while (head < queue.length && tilesPlaced < maxTiles) {
+            const { x, y } = queue[head++];
 
-    let attempts = 0;
-    const maxAttemptsPerTile = 5;
+            const directions = [
+                { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }, // Cardinal
+                { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }  // Diagonal
+            ];
+            directions.sort(() => Math.random() - 0.5); // Shuffle for more organic spread
 
-    while (queue.length > 0 && tilesPlaced < maxTiles && attempts < maxTiles * maxAttemptsPerTile) {
-        const { x, y } = queue.shift();
+            for (const dir of directions) {
+                if (tilesPlaced >= maxTiles) break;
 
-        // Shuffle directions to make it more organic
-        directions.sort(() => Math.random() - 0.5);
+                const nx = x + dir.dx;
+                const ny = y + dir.dy;
 
-        for (const dir of directions) {
-            if (tilesPlaced >= maxTiles) break;
-
-            const nx = x + dir.dx;
-            const ny = y + dir.dy;
-
-            if (nx >= 0 && nx < WORLD_UNITS_WIDTH && ny >= 0 && ny < WORLD_UNITS_HEIGHT) {
-                if (map[ny][nx] === 'ground' && Math.random() < 0.7) { // 70% chance to spread
-                    map[ny][nx] = biomeType;
-                    tilesPlaced++;
-                    queue.push({ x: nx, y: ny });
+                if (Math.random() < spreadChance) { // Chance to spread to this neighbor
+                    addTileToQueue(nx, ny);
                 }
             }
-            attempts++;
         }
     }
 }
@@ -214,16 +212,16 @@ function setupWorld() {
     trees.length = 0; // Clear previous trees
 
     // Generate Lake Biome
-    const lakeStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH - 10) + 5); // Ensure not too close to edge
-    const lakeStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT - 10) + 5);
-    const maxLakeTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.05); // e.g., 5% of map size
-    generateOrganicBiome(worldMap, 'lake', lakeStartX, lakeStartY, maxLakeTiles);
+    const lakeStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2); // Start within middle 60%
+    const lakeStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
+    const maxLakeTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.04); // e.g., 4% of map size
+    generateOrganicBiome(worldMap, 'lake', lakeStartX, lakeStartY, maxLakeTiles, 0.6); // 60% spread chance
 
     // Generate Forest Biome
-    const forestStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH - 10) + 5);
-    const forestStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT - 10) + 5);
-    const maxForestTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.15); // e.g., 15% of map size
-    generateOrganicBiome(worldMap, 'forest', forestStartX, forestStartY, maxForestTiles);
+    const forestStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
+    const forestStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
+    const maxForestTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.12); // e.g., 12% of map size
+    generateOrganicBiome(worldMap, 'forest', forestStartX, forestStartY, maxForestTiles, 0.7); // 70% spread chance
 
 
     // Place trees within the forest biome based on the generated worldMap
@@ -239,27 +237,34 @@ function setupWorld() {
     // Place player at the center of the world, or on valid ground if center is a biome
     player.x = WORLD_UNITS_WIDTH / 2;
     player.y = WORLD_UNITS_HEIGHT / 2;
-    // Adjust player position if it lands on water or tree initially (basic check)
-    if (worldMap[Math.floor(player.y)][Math.floor(player.x)] !== 'ground') {
-        // Find nearest ground if starting on a biome
+    // Adjust player position if it lands on water initially
+    let playerGridX = Math.floor(player.x);
+    let playerGridY = Math.floor(player.y);
+
+    if (worldMap[playerGridY] && worldMap[playerGridY][playerGridX] === 'lake') {
         let foundGround = false;
-        for (let dy = -2; dy <= 2; dy++) {
-            for (let dx = -2; dx <= 2; dx++) {
-                const checkX = Math.floor(player.x) + dx;
-                const checkY = Math.floor(player.y) + dy;
-                if (checkX >= 0 && checkX < WORLD_UNITS_WIDTH &&
-                    checkY >= 0 && checkY < WORLD_UNITS_HEIGHT &&
-                    worldMap[checkY][checkX] === 'ground') {
-                    player.x = checkX + 0.5; // Center player on this patch
-                    player.y = checkY + 0.5;
-                    foundGround = true;
-                    break;
+        // Search in a spiral pattern outwards
+        for (let radius = 1; radius < Math.max(WORLD_UNITS_WIDTH, WORLD_UNITS_HEIGHT); radius++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    if (Math.abs(dx) === radius || Math.abs(dy) === radius) { // Only check outer ring
+                        const checkX = Math.floor(player.x) + dx;
+                        const checkY = Math.floor(player.y) + dy;
+                        if (checkX >= 0 && checkX < WORLD_UNITS_WIDTH &&
+                            checkY >= 0 && checkY < WORLD_UNITS_HEIGHT &&
+                            worldMap[checkY][checkX] === 'ground') {
+                            player.x = checkX + 0.5; // Center player on this patch
+                            player.y = checkY + 0.5;
+                            foundGround = true;
+                            break;
+                        }
+                    }
                 }
+                if (foundGround) break;
             }
             if (foundGround) break;
         }
     }
-
 
     player.isMoving = false;
     player.animationFrame = 0;
@@ -284,7 +289,7 @@ function draw() {
 
             let tileColors;
             let isWater = false;
-            const biomeType = worldMap[y][x]; // Get biome type from the pre-generated map
+            const biomeType = worldMap[y][x];
 
             switch (biomeType) {
                 case 'ground':
@@ -424,7 +429,7 @@ function draw() {
     // Draw all sorted entities
     drawables.forEach(entity => {
         if (entity.type === 'groundPatch') {
-            drawIsometricDiamond(entity.colors, entity.screenX, entity.screenY, entity.isoWidth, entity.isoHeight);
+            drawIsometricDiamond(entity.colors, entity.screenX, entity.screenY, entity.isoWidth, entity.isoHeight, DRAW_GROUND_BORDERS, GROUND_BORDER_COLOR, GROUND_BORDER_THICKNESS);
         } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'playerLeg' || entity.type === 'playerBody') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         }

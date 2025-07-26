@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 7; // <--- INCREMENTED TO 7 FOR PLAYER BODY/LEG SEPARATION IN SORTING!
+const GAME_VERSION = 8; // <--- INCREMENTED TO 8 FOR PLAYER BODY/LEG SORTING FIXES!
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -355,7 +355,7 @@ function draw() {
     }
 
     // --- Add Player components to drawables separately ---
-    const playerScreenPos = isoToScreen(player.x, player.y);
+    const playerScreenPos = isoToScreen(player.x, player.y); // Use interpolated player.x, player.y
 
     // Animation offset for legs
     let animOffsetA = 0;
@@ -371,12 +371,13 @@ function draw() {
     }
 
     // Calculate base Y for the entire player figure (feet on the ground)
-    const playerBaseY = playerScreenPos.y + TILE_ISO_HEIGHT;
+    // This is the effective ground level for the player.
+    const playerActualGroundY = playerScreenPos.y + TILE_ISO_HEIGHT;
 
-    // Calculate the top of the legs relative to playerBaseY and visual lift
-    const legsTopY = playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - PLAYER_VISUAL_LIFT_OFFSET;
+    // Calculate the top of the legs relative to playerActualGroundY and visual lift
+    const legsTopY = playerActualGroundY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - PLAYER_VISUAL_LIFT_OFFSET;
 
-    // Leg A (front-left/right)
+    // Player Leg A
     drawables.push({
         type: 'playerLeg',
         x: player.x, y: player.y,
@@ -386,12 +387,12 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // The sortY for the leg should be its lowest point.
-        // It should be just above the tile (playerBaseY + epsilon).
-        sortY: playerBaseY + 0.01 // Small epsilon to draw above the tile
+        // Sort at its lowest point. Needs to be above the tile (playerActualGroundY)
+        // Adding player.y as a secondary sort for legs on the same tile but slightly different interpolated y
+        sortY: playerActualGroundY + (player.y * 0.001) + 0.01 // Epsilon + interpolated Y for smoother sorting during movement
     });
 
-    // Leg B (back-right/left)
+    // Player Leg B
     drawables.push({
         type: 'playerLeg',
         x: player.x, y: player.y,
@@ -401,8 +402,9 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // The sortY for the leg should be its lowest point.
-        sortY: playerBaseY + 0.02 // Slightly larger epsilon for the second leg to draw it slightly above the first if they're on the same Y
+        // Sort at its lowest point. Needs to be above the tile (playerActualGroundY)
+        // Adding player.y as a secondary sort for legs on the same tile but slightly different interpolated y
+        sortY: playerActualGroundY + (player.y * 0.001) + 0.02 // Slightly larger epsilon for the second leg
     });
 
     // Player Body
@@ -416,9 +418,10 @@ function draw() {
         isoWidth: PLAYER_BODY_ISO_WIDTH,
         isoHeight: PLAYER_BODY_ISO_HEIGHT,
         colors: player.bodyColor,
-        // The sortY for the body should be its lowest point, which is where it connects to the legs.
-        // This means it should be drawn *after* the legs.
-        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.03 // Adjust this carefully
+        // The sortY for the body should be its lowest point, where it connects to the legs.
+        // This is visually above the legs.
+        // It needs to be consistently sorted *after* the legs.
+        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + (player.y * 0.001) + 0.03 // Epsilon + interpolated Y for smoother sorting
     });
 
 
@@ -429,8 +432,12 @@ function draw() {
             return a.sortY - b.sortY;
         }
         // Secondary sort by grid Y for items on the same sortY level (important for isometric depth)
-        if (a.y !== b.y) {
-            return a.y - b.y;
+        // Using player.y for player components for smoother interpolated sorting
+        const aY = a.type.startsWith('player') ? a.y : a.y;
+        const bY = b.type.startsWith('player') ? b.y : b.y;
+
+        if (aY !== bY) {
+            return aY - bY;
         }
         // Tertiary sort by grid X for items on the same grid Y and sortY level
         if (a.x !== b.x) {
@@ -438,6 +445,7 @@ function draw() {
         }
         // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
         // Order based on your request: Tile -> Tree Trunk -> Player Legs -> Player Body -> Tree Leaves
+        // MODIFIED ORDER: Player Body (3) now draws AFTER Player Legs (2)
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });

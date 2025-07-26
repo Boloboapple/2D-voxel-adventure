@@ -7,8 +7,8 @@ const TILE_ISO_WIDTH = 64; // Base unit for isometric scaling
 const TILE_ISO_HEIGHT = 32; // Base unit for isometric scaling
 
 // Define the logical "world size" in terms of how many "base units" it spans
-const WORLD_UNITS_WIDTH = 20;
-const WORLD_UNITS_HEIGHT = 15;
+const WORLD_UNITS_WIDTH = 40; // Increased size for more visible biomes
+const WORLD_UNITS_HEIGHT = 30; // Increased size for more visible biomes
 
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3;
@@ -35,7 +35,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 21; // <--- INCREMENTED TO 21 for re-adding the lake
+const GAME_VERSION = 22; // <--- INCREMENTED TO 22 for random, organic biomes
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -72,9 +72,10 @@ const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
 
 const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
-// --- World Biomes (new structure) ---
-const worldBiomes = [];
-const trees = [];
+// --- World Data Structure ---
+// This 2D array will store the biome type for each (x,y) world unit
+const worldMap = [];
+const trees = []; // Trees will be placed based on the worldMap
 
 // --- Keyboard Input State ---
 const keysPressed = {};
@@ -144,53 +145,122 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
 }
 
 
+// --- Biome Generation Helper Functions ---
+
+function create2DArray(width, height, defaultValue) {
+    const array = new Array(height);
+    for (let y = 0; y < height; y++) {
+        array[y] = new Array(width).fill(defaultValue);
+    }
+    return array;
+}
+
+// Simple "random walk" or "cellular automata" for organic shapes
+function generateOrganicBiome(map, biomeType, startX, startY, maxTiles) {
+    const queue = [{ x: startX, y: startY }];
+    let tilesPlaced = 0;
+
+    // Set initial tile if within bounds
+    if (startX >= 0 && startX < WORLD_UNITS_WIDTH && startY >= 0 && startY < WORLD_UNITS_HEIGHT) {
+        if (map[startY][startX] === 'ground') { // Only place on empty ground
+            map[startY][startX] = biomeType;
+            tilesPlaced++;
+        }
+    }
+
+    const directions = [
+        { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }, // Cardinal
+        { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }  // Diagonal
+    ];
+
+    let attempts = 0;
+    const maxAttemptsPerTile = 5;
+
+    while (queue.length > 0 && tilesPlaced < maxTiles && attempts < maxTiles * maxAttemptsPerTile) {
+        const { x, y } = queue.shift();
+
+        // Shuffle directions to make it more organic
+        directions.sort(() => Math.random() - 0.5);
+
+        for (const dir of directions) {
+            if (tilesPlaced >= maxTiles) break;
+
+            const nx = x + dir.dx;
+            const ny = y + dir.dy;
+
+            if (nx >= 0 && nx < WORLD_UNITS_WIDTH && ny >= 0 && ny < WORLD_UNITS_HEIGHT) {
+                if (map[ny][nx] === 'ground' && Math.random() < 0.7) { // 70% chance to spread
+                    map[ny][nx] = biomeType;
+                    tilesPlaced++;
+                    queue.push({ x: nx, y: ny });
+                }
+            }
+            attempts++;
+        }
+    }
+}
+
+
 // --- Initial Map/World Setup Function ---
 function setupWorld() {
-    worldBiomes.length = 0; // Clear previous biomes
+    // Initialize worldMap with 'ground' everywhere
+    for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
+        worldMap[y] = [];
+        for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
+            worldMap[y][x] = 'ground';
+        }
+    }
+
     trees.length = 0; // Clear previous trees
 
-    // Define the main ground plane biome (covers the entire world)
-    worldBiomes.push({
-        type: 'ground',
-        x: 0, y: 0,
-        width: WORLD_UNITS_WIDTH,
-        height: WORLD_UNITS_HEIGHT,
-        colors: GROUND_COLORS
-    });
+    // Generate Lake Biome
+    const lakeStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH - 10) + 5); // Ensure not too close to edge
+    const lakeStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT - 10) + 5);
+    const maxLakeTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.05); // e.g., 5% of map size
+    generateOrganicBiome(worldMap, 'lake', lakeStartX, lakeStartY, maxLakeTiles);
 
-    // Add a Lake biome (rectangular for now)
-    worldBiomes.push({
-        type: 'lake',
-        x: 12, y: 3,
-        width: 6, height: 4,
-        colors: LAKE_COLORS
-    });
+    // Generate Forest Biome
+    const forestStartX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH - 10) + 5);
+    const forestStartY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT - 10) + 5);
+    const maxForestTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * 0.15); // e.g., 15% of map size
+    generateOrganicBiome(worldMap, 'forest', forestStartX, forestStartY, maxForestTiles);
 
-    // Add a Forest biome (rectangular for now)
-    worldBiomes.push({
-        type: 'forest',
-        x: 2, y: 8,
-        width: 8, height: 6,
-        colors: FOREST_GROUND_COLORS // Use forest ground colors for the biome patch
-    });
 
-    // Place trees within the forest biome
-    const forestBiome = worldBiomes.find(b => b.type === 'forest');
-    if (forestBiome) {
-        const treeDensity = 0.4; // 40% chance to place a tree in a unit square
-        for (let y = forestBiome.y; y < forestBiome.y + forestBiome.height; y++) {
-            for (let x = forestBiome.x; x < forestBiome.x + forestBiome.width; x++) {
-                if (Math.random() < treeDensity) {
-                    // Add slight random offset within the unit square for natural look
-                    trees.push({ x: x + Math.random(), y: y + Math.random() });
-                }
+    // Place trees within the forest biome based on the generated worldMap
+    const treeDensity = 0.4; // 40% chance to place a tree in a forest unit square
+    for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
+        for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
+            if (worldMap[y][x] === 'forest' && Math.random() < treeDensity) {
+                trees.push({ x: x + Math.random(), y: y + Math.random() }); // Add slight random offset for natural look
             }
         }
     }
 
-    // Place player at the center of the world
+    // Place player at the center of the world, or on valid ground if center is a biome
     player.x = WORLD_UNITS_WIDTH / 2;
     player.y = WORLD_UNITS_HEIGHT / 2;
+    // Adjust player position if it lands on water or tree initially (basic check)
+    if (worldMap[Math.floor(player.y)][Math.floor(player.x)] !== 'ground') {
+        // Find nearest ground if starting on a biome
+        let foundGround = false;
+        for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                const checkX = Math.floor(player.x) + dx;
+                const checkY = Math.floor(player.y) + dy;
+                if (checkX >= 0 && checkX < WORLD_UNITS_WIDTH &&
+                    checkY >= 0 && checkY < WORLD_UNITS_HEIGHT &&
+                    worldMap[checkY][checkX] === 'ground') {
+                    player.x = checkX + 0.5; // Center player on this patch
+                    player.y = checkY + 0.5;
+                    foundGround = true;
+                    break;
+                }
+            }
+            if (foundGround) break;
+        }
+    }
+
+
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;
@@ -207,28 +277,28 @@ function draw() {
 
     const drawables = [];
 
-    // --- Add Ground Patches for Biomes ---
+    // --- Add Ground Patches based on World Map ---
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
             const screenPos = isoToScreen(x, y);
 
-            let tileColors = GROUND_COLORS; // Default to plains ground
+            let tileColors;
             let isWater = false;
+            const biomeType = worldMap[y][x]; // Get biome type from the pre-generated map
 
-            // Determine biome color for this conceptual unit square
-            // Iterate over biomes in a specific order (e.g., smaller/overlaying biomes last)
-            // For now, order added to worldBiomes determines draw order (last one wins if overlapping)
-            for (const biome of worldBiomes) {
-                if (x >= biome.x && x < biome.x + biome.width &&
-                    y >= biome.y && y < biome.y + biome.height) {
-                    tileColors = biome.colors;
-                    if (biome.type === 'lake') {
-                        isWater = true;
-                    }
-                    // Do NOT break here. Allow subsequent biomes to potentially override.
-                    // This is important if biomes overlap and you want a specific one to take precedence.
-                    // For distinct rectangular biomes, it doesn't matter as much.
-                }
+            switch (biomeType) {
+                case 'ground':
+                    tileColors = GROUND_COLORS;
+                    break;
+                case 'lake':
+                    tileColors = LAKE_COLORS;
+                    isWater = true;
+                    break;
+                case 'forest':
+                    tileColors = FOREST_GROUND_COLORS;
+                    break;
+                default:
+                    tileColors = GROUND_COLORS; // Fallback
             }
 
             drawables.push({
@@ -261,8 +331,7 @@ function draw() {
         const trunkTopScreenY = treeScreenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
         const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
 
-        // Calculate the deepest visual point of the tree for sorting.
-        const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT; // Y coord of the ground point + its height
+        const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT;
         
         drawables.push({
             type: 'treeTrunk',
@@ -273,7 +342,7 @@ function draw() {
             isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
             isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
             colors: TREE_TRUNK_COLOR,
-            sortY: treeBaseScreenY + 0.001 // Slightly above ground patches
+            sortY: treeBaseScreenY + 0.001
         });
 
         drawables.push({
@@ -285,7 +354,7 @@ function draw() {
             isoWidth: LEAVES_ISO_WIDTH_SCALE * TILE_ISO_WIDTH,
             isoHeight: LEAVES_ISO_HEIGHT_SCALE * TILE_ISO_HEIGHT,
             colors: TREE_LEAVES_COLOR,
-            sortY: treeBaseScreenY + 0.002 // Leaves are higher than trunks
+            sortY: treeBaseScreenY + 0.002
         });
     });
 

@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 9; // <--- INCREMENTED TO 8 FOR PLAYER BODY/LEG SORTING FIXES!
+const GAME_VERSION = 10; // <--- INCREMENTED TO 10 FOR PLAYER SORTING REFINEMENT
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -75,7 +75,7 @@ const player = {
     bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
     legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
     isMoving: false, // Flag to indicate if player is currently interpolating between tiles
-    moveSpeed: 0.05, // How fast player interpolates (0.01 - 1.0, larger is faster) - DECREASED FOR SLOWER MOVEMENT
+    moveSpeed: 0.05, // How fast player interpolates (0.01 - 1.0, larger is faster)
     animationFrame: 0, // Current frame of walking animation
     animationSpeed: 5, // How many game frames per animation frame (lower = faster)
     frameCount: 0 // Global frame counter for animation timing
@@ -387,9 +387,8 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // Sort at its lowest point. Needs to be above the tile (playerActualGroundY)
-        // Adding player.y as a secondary sort for legs on the same tile but slightly different interpolated y
-        sortY: playerActualGroundY + (player.y * 0.001) + 0.01 // Epsilon + interpolated Y for smoother sorting during movement
+        // Sort by the visual bottom of the leg. Add a tiny offset for distinctness.
+        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.001
     });
 
     // Player Leg B
@@ -402,9 +401,8 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // Sort at its lowest point. Needs to be above the tile (playerActualGroundY)
-        // Adding player.y as a secondary sort for legs on the same tile but slightly different interpolated y
-        sortY: playerActualGroundY + (player.y * 0.001) + 0.02 // Slightly larger epsilon for the second leg
+        // Sort by the visual bottom of the leg. Add a tiny offset for distinctness.
+        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.002
     });
 
     // Player Body
@@ -419,9 +417,8 @@ function draw() {
         isoHeight: PLAYER_BODY_ISO_HEIGHT,
         colors: player.bodyColor,
         // The sortY for the body should be its lowest point, where it connects to the legs.
-        // This is visually above the legs.
         // It needs to be consistently sorted *after* the legs.
-        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + (player.y * 0.001) + 0.03 // Epsilon + interpolated Y for smoother sorting
+        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.003
     });
 
 
@@ -431,21 +428,18 @@ function draw() {
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        // Secondary sort by grid Y for items on the same sortY level (important for isometric depth)
-        // Using player.y for player components for smoother interpolated sorting
-        const aY = a.type.startsWith('player') ? a.y : a.y;
-        const bY = b.type.startsWith('player') ? b.y : b.y;
-
-        if (aY !== bY) {
-            return aY - bY;
+        // Secondary sort by interpolated grid Y for items on the same sortY level (important for isometric depth)
+        // This is key for smooth sorting during player movement.
+        if (a.y !== b.y) {
+            return a.y - b.y;
         }
-        // Tertiary sort by grid X for items on the same grid Y and sortY level
+        // Tertiary sort by interpolated grid X for items on the same grid Y and sortY level
         if (a.x !== b.x) {
             return a.x - b.x;
         }
-        // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
-        // Order based on your request: Tile -> Tree Trunk -> Player Legs -> Player Body -> Tree Leaves
-        // MODIFIED ORDER: Player Body (3) now draws AFTER Player Legs (2)
+        // Tie-breaker for objects on the exact same tile and same sortY level.
+        // This order dictates what draws on top when all other sorting criteria are equal.
+        // Order: Tile -> Tree Trunk -> Player Leg -> Player Body -> Tree Leaves
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });

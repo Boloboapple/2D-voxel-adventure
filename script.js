@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 33; // <--- INCREMENTED TO 33 for non-stop spawning
+const GAME_VERSION = 34; // <--- INCREMENTED TO 34 for attack logic
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -51,11 +51,13 @@ const PLAYER_LEG_COLOR = { top: '#CD853F', left: '#8B4513', right: '#A0522D' }; 
 
 const WARRIOR_BODY_COLOR = { top: '#B22222', left: '#8B0000', right: '#660000' }; // Dark Red
 const WARRIOR_LEG_COLOR = { top: '#4F4F4F', left: '#363636', right: '#292929' }; // Dark Grey
+const STICK_COLOR = { top: '#8B4513', left: '#654321', right: '#4A2C00' }; // Brownish for the stick
 
 // --- Player Object ---
 const player = {
     x: WORLD_UNITS_WIDTH / 2,
     y: WORLD_UNITS_HEIGHT / 2,
+    type: 'player', // Added type for drawing logic
     bodyColor: PLAYER_BODY_COLOR,
     legColor: PLAYER_LEG_COLOR,
     isMoving: false,
@@ -87,11 +89,8 @@ const camera = {
 
 // --- Enemy Warrior Configuration ---
 const warriors = [];
-// *** CHANGE FOR NON-STOP SPAWNING ***
 const WARRIOR_SPAWN_INTERVAL = 100; // 100 milliseconds = spawn almost every frame
-// *** END CHANGE ***
 let lastWarriorSpawnTime = 0; // Will be initialized to 0 in setupWorld
-// TEMPORARY: More warriors for debugging!
 const MAX_WARRIORS = 50; // Increased max warriors even further
 
 const WARRIOR_AGGRO_RANGE = 5; // Distance in world units for player detection
@@ -103,7 +102,7 @@ const WARRIOR_HEALTH = 50; // Warrior health
 const WARRIOR_STATE = {
     IDLE: 'idle',
     CHASING: 'chasing',
-    ATTACKING: 'attacking' // Will implement in next phase
+    ATTACKING: 'attacking' // NEW STATE for when they are performing an attack
 };
 
 // --- World Data Structure ---
@@ -183,7 +182,8 @@ function drawCharacter(character, screenPos, sortY) {
     let animOffsetA = 0;
     let animOffsetB = 0;
 
-    if (character.isMoving) {
+    // Apply movement animation only if not attacking
+    if (character.isMoving && !character.isAttacking) {
         const frame = character.animationFrame;
         const liftAmount = TILE_ISO_HEIGHT * 0.08;
         if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
@@ -229,6 +229,49 @@ function drawCharacter(character, screenPos, sortY) {
         colors: character.bodyColor,
         sortY: sortY + 0.0032
     });
+
+    // --- Draw Attack Stick if warrior is attacking ---
+    // Make sure 'character.type' is defined for player and warriors (added above)
+    if (character.type === 'warrior' && character.isAttacking) {
+        let stickOffsetIsoX = 0;
+        let stickOffsetIsoY = 0;
+        let stickHeight = TILE_ISO_HEIGHT * 0.7; // Height of the stick
+        let stickWidth = TILE_ISO_WIDTH * 0.15; // Width of the stick
+
+        const attackFrame = character.attackAnimationFrame;
+
+        // Simple swing animation (adjust offsets as needed for visual effect)
+        // These offsets are relative to the character's body center.
+        if (attackFrame === 0) { // Start position (stick held up/back)
+            stickOffsetIsoX = TILE_ISO_WIDTH * 0.25;
+            stickOffsetIsoY = -TILE_ISO_HEIGHT * 0.05;
+        } else if (attackFrame === 1) { // Mid-swing (moving forward/down)
+            stickOffsetIsoX = TILE_ISO_WIDTH * 0.1;
+            stickOffsetIsoY = TILE_ISO_HEIGHT * 0.05;
+        } else if (attackFrame === 2) { // Hit position (forward)
+            stickOffsetIsoX = TILE_ISO_WIDTH * 0.0;
+            stickOffsetIsoY = TILE_ISO_HEIGHT * 0.1;
+        } else if (attackFrame === 3) { // Return swing (back to idle-ish)
+            stickOffsetIsoX = TILE_ISO_WIDTH * 0.15;
+            stickOffsetIsoY = TILE_ISO_HEIGHT * 0.0;
+        }
+
+        // Stick drawn relative to character's body
+        drawables.push({
+            type: 'characterPart', // Still render as characterPart for sorting
+            x: character.x, y: character.y,
+            // Calculate screenX and screenY relative to the character's body position
+            // This places the stick visually around the character's hand area
+            screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (stickWidth / 2) + stickOffsetIsoX,
+            screenY: screenPos.y + TILE_ISO_HEIGHT - CHARACTER_VISUAL_LIFT_OFFSET - CHARACTER_LEG_Z_HEIGHT - CHARACTER_BODY_Z_HEIGHT + (CHARACTER_BODY_ISO_HEIGHT / 2) - stickHeight / 2 + stickOffsetIsoY,
+            zHeight: stickHeight,
+            isoWidth: stickWidth,
+            isoHeight: stickWidth / 2, // Make it look like a thin block
+            colors: STICK_COLOR,
+            sortY: sortY + 0.004 // Draw slightly above body for visual layering
+        });
+    }
+    // --- END NEW ---
 }
 
 
@@ -353,9 +396,7 @@ function setupWorld() {
     player.animationFrame = 0;
     player.frameCount = 0;
 
-    // *** CHANGE FOR NON-STOP SPAWNING ***
     lastWarriorSpawnTime = 0; // Initialize to 0 to trigger immediate spawn on first loop
-    // *** END CHANGE ***
 }
 
 // --- Helper for collision detection ---
@@ -400,7 +441,7 @@ function spawnWarrior() {
 
     let spawnX, spawnY;
     let attempts = 0;
-    const maxAttempts = 1; // TEMPORARY: Still reduced to 1 for debugging
+    const maxAttempts = 1; // Still reduced to 1 for debugging
     let foundValidSpot = false;
 
     // Try to find a spawn location that is 'ground' and not too close to the player
@@ -435,6 +476,7 @@ function spawnWarrior() {
     warriors.push({
         x: spawnX,
         y: spawnY,
+        type: 'warrior', // Added type for drawing logic
         bodyColor: WARRIOR_BODY_COLOR,
         legColor: WARRIOR_LEG_COLOR,
         isMoving: false,
@@ -447,36 +489,60 @@ function spawnWarrior() {
         targetX: null,
         targetY: null,
         aggroRange: WARRIOR_AGGRO_RANGE,
-        attackRange: 0.8
+        attackRange: 0.8, // Existing: The range they stop moving to attack
+        attackDamage: 15, // Damage dealt per hit
+        attackCooldown: 800, // 0.8 seconds in milliseconds
+        lastAttackTime: 0, // When they last attacked (Date.now() type timestamp)
+        isAttacking: false, // Flag to trigger attack animation
+        attackAnimationFrame: 0, // For stick swing animation
+        attackFrameCount: 0, // For stick swing animation timing
     });
     console.log(`SUCCESS: Warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}). Total warriors: ${warriors.length}`);
 }
 
 function updateWarriors() {
+    const currentTime = Date.now(); // Get current time once per update for all warriors
+
     warriors.forEach((warrior, index) => {
         const distToPlayer = Math.sqrt(Math.pow(warrior.x - player.x, 2) + Math.pow(warrior.y - player.y, 2));
 
-        // State Transition: IDLE to CHASING
-        if (warrior.state === WARRIOR_STATE.IDLE && distToPlayer <= warrior.aggroRange) {
-            warrior.state = WARRIOR_STATE.CHASING;
-            console.log(`Warrior ${index} at (${warrior.x.toFixed(2)}, ${warrior.y.toFixed(2)}) is now CHASING player.`);
-        }
-        // State Transition: CHASING to IDLE (if player gets too far)
-        else if (warrior.state === WARRIOR_STATE.CHASING && distToPlayer > warrior.aggroRange * 1.5) {
-            warrior.state = WARRIOR_STATE.IDLE;
-            console.log(`Warrior ${index} is now IDLE (player too far).`);
-            warrior.targetX = null;
-            warrior.targetY = null;
+        // --- State Transitions ---
+        if (warrior.state === WARRIOR_STATE.IDLE) {
+            if (distToPlayer <= warrior.aggroRange) {
+                warrior.state = WARRIOR_STATE.CHASING;
+                console.log(`Warrior ${index} at (${warrior.x.toFixed(2)}, ${warrior.y.toFixed(2)}) is now CHASING player.`);
+            }
+        } else if (warrior.state === WARRIOR_STATE.CHASING) {
+            if (distToPlayer <= warrior.attackRange && currentTime - warrior.lastAttackTime > warrior.attackCooldown) {
+                warrior.state = WARRIOR_STATE.ATTACKING;
+                warrior.isMoving = false; // Stop chasing movement
+                warrior.isAttacking = true; // Trigger attack animation
+                warrior.attackAnimationFrame = 0; // Start attack animation from beginning
+                warrior.attackFrameCount = 0;
+                console.log(`Warrior ${index} is now ATTACKING player!`);
+            } else if (distToPlayer > warrior.aggroRange * 1.5) { // If player moves too far while chasing
+                warrior.state = WARRIOR_STATE.IDLE;
+                console.log(`Warrior ${index} is now IDLE (player too far while chasing).`);
+                warrior.targetX = null;
+                warrior.targetY = null;
+            }
+        } else if (warrior.state === WARRIOR_STATE.ATTACKING) {
+            // If attack animation finished or player moved out of range
+            if (!warrior.isAttacking || distToPlayer > warrior.attackRange) {
+                warrior.state = WARRIOR_STATE.CHASING; // Revert to chasing if possible
+                console.log(`Warrior ${index} finished ATTACKING or player moved, now CHASING.`);
+            }
         }
 
-        // Behavior based on state
+        // --- Behavior based on current state ---
         if (warrior.state === WARRIOR_STATE.CHASING) {
             warrior.isMoving = true;
             let dx = player.x - warrior.x;
             let dy = player.y - warrior.y;
             const magnitude = Math.sqrt(dx * dx + dy * dy);
 
-            if (magnitude > warrior.attackRange) {
+            // Move only if not in attack range, or if still on cooldown (so it doesn't just sit there)
+            if (magnitude > warrior.attackRange || currentTime - warrior.lastAttackTime <= warrior.attackCooldown) {
                 dx /= magnitude;
                 dy /= magnitude;
 
@@ -484,7 +550,6 @@ function updateWarriors() {
                 let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
 
                 // Improved collision for warriors: check next tile
-                // Note: isWalkable expects grid coordinates, so floor the float positions for the check
                 if (isWalkable(potentialNewX, potentialNewY)) {
                     warrior.x = potentialNewX;
                     warrior.y = potentialNewY;
@@ -501,10 +566,32 @@ function updateWarriors() {
                     }
                 }
             } else {
-                warrior.isMoving = false;
-                // Attack logic goes here in the next phase
+                warrior.isMoving = false; // Stop moving if in range and ready to attack
             }
-        } else if (warrior.state === WARRIOR_STATE.IDLE) {
+        }
+        else if (warrior.state === WARRIOR_STATE.ATTACKING) {
+            warrior.isMoving = false; // No movement while attacking
+
+            // Attack animation logic
+            warrior.attackFrameCount++;
+            if (warrior.attackFrameCount % 5 === 0) { // Adjust speed of attack swing animation (every 5 frames)
+                warrior.attackAnimationFrame++;
+                if (warrior.attackAnimationFrame === 2) { // Frame 2 is designated as the 'hit' frame
+                    // Apply damage only once per attack animation cycle
+                    if (player.health > 0) { // Don't damage if player is already dead
+                        player.health = Math.max(0, player.health - warrior.attackDamage);
+                        console.log(`Player hit by warrior ${index}! Health: ${player.health}`);
+                    }
+                    warrior.lastAttackTime = currentTime; // Reset cooldown after damage is dealt
+                }
+                if (warrior.attackAnimationFrame >= 4) { // After 4 frames, animation cycle ends
+                    warrior.attackAnimationFrame = 0; // Reset for next attack
+                    warrior.isAttacking = false; // Attack animation done
+                    // The state transition logic at the top of the loop will handle what happens next (e.g., back to chasing)
+                }
+            }
+        }
+        else if (warrior.state === WARRIOR_STATE.IDLE) {
             if (!warrior.isMoving && Math.random() < WARRIOR_IDLE_MOVE_CHANCE) {
                 let foundTarget = false;
                 let attempts = 0;
@@ -512,10 +599,9 @@ function updateWarriors() {
                 while (!foundTarget && attempts < maxIdleAttempts) {
                     const randomOffsetMagnitude = Math.random() * 3 + 1;
                     const randomAngle = Math.random() * Math.PI * 2;
-                    const targetCandidateX = warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude; // Don't floor yet, keep float for target
+                    const targetCandidateX = warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude;
                     const targetCandidateY = warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude;
 
-                    // Check if the destination tile is walkable (using floor for grid lookup)
                     if (isWalkable(Math.floor(targetCandidateX), Math.floor(targetCandidateY))) {
                         warrior.targetX = targetCandidateX;
                         warrior.targetY = targetCandidateY;
@@ -556,18 +642,18 @@ function updateWarriors() {
             }
         }
 
-        // Animation update for warrior
-        if (warrior.isMoving) {
+        // Animation update for warrior (normal movement only if not attacking)
+        if (warrior.isMoving && !warrior.isAttacking) {
             warrior.frameCount++;
             if (warrior.frameCount % warrior.animationSpeed === 0) {
                 warrior.animationFrame = (warrior.animationFrame + 1) % 4;
             }
-        } else {
+        } else if (!warrior.isAttacking) { // Reset if not moving and not attacking (for consistent idle stance)
             warrior.frameCount = 0;
             warrior.animationFrame = 0;
         }
 
-        // Remove dead warriors (for future attack system)
+        // Remove dead warriors
         if (warrior.health <= 0) {
             warriors.splice(index, 1);
             console.log(`Warrior ${index} defeated! Remaining warriors: ${warriors.length}`);
@@ -673,7 +759,7 @@ function draw() {
         const warriorScreenPos = isoToScreen(warrior.x, warrior.y);
         const warriorSortY = warriorScreenPos.y + TILE_ISO_HEIGHT + CHARACTER_LEG_Z_HEIGHT + CHARACTER_BODY_Z_HEIGHT;
 
-        // *** TEMPORARY: CULLING COMMENTED OUT FOR DEBUGGING ***
+        // Culling commented out for debugging for now. Uncomment if performance becomes an issue.
         // if (warriorScreenPos.x + TILE_ISO_WIDTH > 0 && warriorScreenPos.x < canvas.width &&
         //     warriorScreenPos.y + CHARACTER_BODY_Z_HEIGHT + CHARACTER_LEG_Z_HEIGHT > 0 && warriorScreenPos.y < canvas.height + TILE_ISO_HEIGHT) {
             drawCharacter(warrior, warriorScreenPos, warriorSortY);
@@ -710,6 +796,7 @@ function draw() {
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
+        // Consistent drawing order for objects at the same y-level to avoid z-fighting
         const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'characterPart': 2, 'treeLeaves': 3 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
@@ -744,6 +831,7 @@ function draw() {
 // --- Game Loop ---
 function gameLoop(currentTime) {
     // *** TEMPORARY: VERY VERBOSE LOGGING FOR DEBUGGING TIMING ***
+    // You can comment these out once you're confident in the spawning behavior
     console.log("------------------------------------------");
     console.log(`Game loop running. CurrentTime: ${currentTime.toFixed(2)}`);
     console.log(`Last Warrior Spawn Time: ${lastWarriorSpawnTime.toFixed(2)}`);
@@ -828,10 +916,11 @@ document.addEventListener('keyup', (event) => {
 
 
 // --- Initial Setup ---
-setupWorld();
-requestAnimationFrame(gameLoop);
+setupWorld(); // Call this once to initialize the map and player
+requestAnimationFrame(gameLoop); // Start the game loop
 
 
+// Create and append the "Generate New Map" button
 const regenerateButton = document.createElement('button');
 regenerateButton.textContent = 'Generate New Map';
 regenerateButton.style.marginTop = '20px';
@@ -844,8 +933,9 @@ regenerateButton.style.borderRadius = '5px';
 regenerateButton.style.cursor = 'pointer';
 document.body.appendChild(regenerateButton);
 
+// Add event listener for the button
 regenerateButton.addEventListener('click', () => {
-    setupWorld();
+    setupWorld(); // Re-initialize the world and reset game state
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;

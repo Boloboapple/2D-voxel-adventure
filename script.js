@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 14; // <--- INCREMENTED TO 14 FOR Z-SORTING FIX
+const GAME_VERSION = 15; // <--- INCREMENTED TO 15 FOR REFINED Z-SORTING
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -279,7 +279,7 @@ function draw() {
     for (let y = 0; y < MAP_HEIGHT; y++) {
         for (let x = 0; x < MAP_WIDTH; x++) {
             const tileType = gameMap[y][x];
-            const screenPos = isoToScreen(x, y);
+            const screenPos = isoToScreen(x, y); // This is the top-middle point of the diamond
 
             // Determine the correct color set for the ground tile
             let groundColorSet;
@@ -303,8 +303,8 @@ function draw() {
                 x: x, y: y,
                 screenX: screenPos.x,
                 screenY: screenPos.y,
-                // Sort by the absolute bottom of the tile on screen
-                sortY: screenPos.y + TILE_ISO_HEIGHT // Base for tiles
+                // Sort by the absolute bottom of the tile on screen (lowest point)
+                sortY: screenPos.y + TILE_ISO_HEIGHT
             });
 
             // If it's a tree, add its components as separate drawables
@@ -330,8 +330,8 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
                     colors: TREE_TRUNK_COLOR,
-                    // Trunk should be drawn after the tile. Its base is the same as the tile's.
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0005 // Just slightly above tile base
+                    // Trunk base is at screenPos.y + TILE_ISO_HEIGHT. Add a small offset.
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.05 // Draws after tile, but before player
                 });
 
                 // Add leaves
@@ -344,8 +344,8 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
                     colors: tileColors[TILE_TYPE_TREE], // Tree leaves use TILE_TYPE_TREE colors
-                    // Leaves should be drawn above player and trunk
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0009 // Highest element on this tile's z-depth
+                    // Leaves are visually highest, so they draw last (highest sortY)
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.2 // Draws after player
                 });
             }
         }
@@ -369,11 +369,9 @@ function draw() {
     }
 
     // Calculate the base Y for the player's "feet" for sorting purposes.
-    // This needs to be above the tile's base.
-    // Use the player's screen Y, plus the full tile height, to get the absolute bottom-middle point of their base.
-    // Then add a small epsilon (0.0001) to ensure they are always drawn after the ground tile.
-    const playerBaseScreenYForSort = playerScreenPos.y + TILE_ISO_HEIGHT + 0.0001; // Epsilon to put player just above tile base
-
+    // This needs to be above the tile's base, but below tree leaves.
+    // The player's base should effectively be at the same screenY as the tile's base.
+    const playerAbsoluteBaseScreenY = playerScreenPos.y + TILE_ISO_HEIGHT;
 
     // Player Leg A
     drawables.push({
@@ -385,8 +383,8 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // Legs sort at their base, with a tiny offset for distinctness.
-        sortY: playerBaseScreenYForSort
+        // Sort after tiles and tree trunks, but before player body and tree leaves
+        sortY: playerAbsoluteBaseScreenY + 0.1
     });
 
     // Player Leg B
@@ -399,8 +397,8 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // Legs sort at their base, with a tiny offset for distinctness.
-        sortY: playerBaseScreenYForSort + 0.00001 // Make leg B draw slightly after leg A if on same base line
+        // Sort after tiles and tree trunks, but before player body and tree leaves
+        sortY: playerAbsoluteBaseScreenY + 0.1 + 0.00001 // Small offset for order between legs
     });
 
     // Player Body
@@ -413,19 +411,22 @@ function draw() {
         isoWidth: PLAYER_BODY_ISO_WIDTH,
         isoHeight: PLAYER_BODY_ISO_HEIGHT,
         colors: player.bodyColor,
-        // Body sorts above the legs' base.
-        sortY: playerBaseScreenYForSort + 0.00002 // Body draws after legs
+        // Sort after legs
+        sortY: playerAbsoluteBaseScreenY + 0.1 + 0.00002 // Small offset for order of body
     });
 
 
-    // Sort drawables by their sortY (depth), then by type order as a final tie-breaker.
+    // Sort drawables primarily by their sortY (lowest point on screen),
+    // then as a tie-breaker, by their object type's inherent drawing priority.
     drawables.sort((a, b) => {
+        // Primary sort: based on absolute screen Y of their base.
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        // If sortY is identical (which should be rare with floating point numbers,
-        // but good for robustness, especially if using integer sortY in future)
-        // Order: Tile (0), Tree Trunk (1), Player Leg (2), Player Body (3), Tree Leaves (4)
+
+        // Secondary sort: if sortY is identical, use a predefined type order.
+        // This ensures consistent layering if objects happen to have the exact same calculated sortY.
+        // Order: Tile (0) -> TreeTrunk (1) -> PlayerLeg (2) -> PlayerBody (3) -> TreeLeaves (4)
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
@@ -434,13 +435,15 @@ function draw() {
     drawables.forEach(entity => {
         if (entity.type === 'tile') {
             // Retrieve the tile's actual type from the gameMap to get its color
-            drawIsometricDiamond(tileColors[gameMap[entity.y][entity.x]], entity.screenX, entity.screenY);
+            // Note: gameMap[entity.y][entity.x] will be the integer grid coordinates for the tile itself.
+            // For player parts, entity.x/y are floats, so we can't use them to index gameMap.
+            drawIsometricDiamond(tileColors[gameMap[Math.floor(entity.y)][Math.floor(entity.x)]], entity.screenX, entity.screenY);
         } else if (entity.type === 'treeTrunk') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         } else if (entity.type === 'treeLeaves') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         } else if (entity.type === 'playerLeg' || entity.type === 'playerBody') {
-            // These now have all the necessary properties in their entity object
+            // Player components now have all the necessary properties in their entity object
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         }
     });

@@ -35,7 +35,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 19; // <--- INCREMENTED TO 19 for correct biome rendering
+const GAME_VERSION = 20; // <--- INCREMENTED TO 20 for refined sorting and lake
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -80,6 +80,7 @@ const trees = [];
 const keysPressed = {};
 
 // --- Coordinate Conversion Function (World Unit to Isometric Screen) ---
+// Returns the screen coordinates of the TOP-MIDDLE point of the isometric "unit"
 function isoToScreen(x, y) {
     const screenX = (x - y) * (TILE_ISO_WIDTH / 2) + globalDrawOffsetX;
     const screenY = (x + y) * (TILE_ISO_HEIGHT / 2) + globalDrawOffsetY;
@@ -196,7 +197,7 @@ function setupWorld() {
 }
 
 
-// --- Main Drawing Function (Modified for Biome Patches) ---
+// --- Main Drawing Function (Modified for Biome Patches and Sorting) ---
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -207,40 +208,36 @@ function draw() {
     const drawables = [];
 
     // --- Add Ground Patches for Biomes ---
-    // Iterate over the "conceptual cells" of the entire world area
-    // This allows us to draw each "unit square" of the world as a small diamond.
-    // We determine the color of each unit square based on what biome it falls into.
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
-            const screenPos = isoToScreen(x, y); // Top-middle point for this conceptual unit square
+            const screenPos = isoToScreen(x, y);
 
             let tileColors = GROUND_COLORS; // Default to plains ground
-            let isWater = false; // Flag for collision/interaction later
+            let isWater = false;
 
             // Determine biome color for this conceptual unit square
             for (const biome of worldBiomes) {
-                // Check if this (x,y) unit falls within the current biome's rectangular bounds
                 if (x >= biome.x && x < biome.x + biome.width &&
                     y >= biome.y && y < biome.y + biome.height) {
                     tileColors = biome.colors;
                     if (biome.type === 'lake') {
                         isWater = true;
                     }
-                    // Break after finding the first matching biome (order matters if biomes overlap)
                     break;
                 }
             }
 
             drawables.push({
-                type: 'groundPatch', // New type for conceptual ground unit
-                x: x, y: y, // Store its conceptual unit coordinates
+                type: 'groundPatch',
+                x: x, y: y,
                 screenX: screenPos.x,
                 screenY: screenPos.y,
-                isoWidth: TILE_ISO_WIDTH, // Each patch is one tile unit size
+                isoWidth: TILE_ISO_WIDTH,
                 isoHeight: TILE_ISO_HEIGHT,
                 colors: tileColors,
-                isWater: isWater, // Store water status
-                sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // All ground patches are lowest layer
+                isWater: isWater,
+                // Sort by the bottom-most point of the diamond
+                sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // Ground patches are the base layer
             });
         }
     }
@@ -261,6 +258,10 @@ function draw() {
         const trunkTopScreenY = treeScreenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
         const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
 
+        // Calculate the deepest visual point of the tree for sorting.
+        // This is the bottom-most point of the trunk's right or left face.
+        const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT; // Y coord of the ground point + its height
+        
         drawables.push({
             type: 'treeTrunk',
             x: tree.x, y: tree.y,
@@ -270,7 +271,7 @@ function draw() {
             isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
             isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
             colors: TREE_TRUNK_COLOR,
-            sortY: treeScreenPos.y + TILE_ISO_HEIGHT + 0.1 // Trees draw above ground patches
+            sortY: treeBaseScreenY + 0.001 // Slightly above ground patches
         });
 
         drawables.push({
@@ -279,10 +280,10 @@ function draw() {
             screenX: treeScreenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
             screenY: leavesTopScreenY,
             zHeight: LEAVES_Z_HEIGHT,
-            isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
-            isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
+            isoWidth: LEAVES_ISO_WIDTH_SCALE * TILE_ISO_WIDTH, // Use TILE_ISO_WIDTH for scaling
+            isoHeight: LEAVES_ISO_HEIGHT_SCALE * TILE_ISO_HEIGHT, // Use TILE_ISO_HEIGHT for scaling
             colors: TREE_LEAVES_COLOR,
-            sortY: treeScreenPos.y + TILE_ISO_HEIGHT + 0.3 // Leaves are highest
+            sortY: treeBaseScreenY + 0.002 // Leaves are higher than trunks
         });
     });
 
@@ -301,7 +302,9 @@ function draw() {
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
 
-    const playerBaseScreenYForSort = playerScreenPos.y + TILE_ISO_HEIGHT;
+    // Calculate player's effective "ground" Y for sorting
+    // This is the player's ground-level screen Y + its height (PLAYER_LEG_Z_HEIGHT + PLAYER_BODY_Z_HEIGHT)
+    const playerSortY = playerScreenPos.y + TILE_ISO_HEIGHT + PLAYER_LEG_Z_HEIGHT + PLAYER_BODY_Z_HEIGHT;
 
     drawables.push({
         type: 'playerLeg',
@@ -312,7 +315,7 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        sortY: playerBaseScreenYForSort + 0.2 // Player parts draw above trees (trunks)
+        sortY: playerSortY + 0.003 // Player legs are at a similar depth to body
     });
 
     drawables.push({
@@ -324,7 +327,7 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        sortY: playerBaseScreenYForSort + 0.2001
+        sortY: playerSortY + 0.0031 // Slight offset for sorting between legs
     });
 
     drawables.push({
@@ -336,18 +339,22 @@ function draw() {
         isoWidth: PLAYER_BODY_ISO_WIDTH,
         isoHeight: PLAYER_BODY_ISO_HEIGHT,
         colors: player.bodyColor,
-        sortY: playerBaseScreenYForSort + 0.2002
+        sortY: playerSortY + 0.0032 // Player body is slightly "higher" in screen Y but should sort with other player parts
     });
 
 
-    // Sort drawables primarily by their sortY (lowest point on screen),
-    // then as a tie-breaker, by their object type's inherent drawing priority.
+    // Sort drawables by their sortY (bottom-most visible point on screen)
+    // Objects with a lower sortY value are drawn first (further away/below).
     drawables.sort((a, b) => {
+        // Primary sort: by the calculated sortY
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        // Secondary sort for exact same sortY values (e.g., player parts)
-        // Order: GroundPatch (0) -> TreeTrunk (1) -> PlayerLeg (2) -> PlayerBody (3) -> TreeLeaves (4)
+
+        // Secondary sort: for items with identical sortY (e.g., within the same "slice")
+        // This is a tie-breaker. You can define specific drawing orders for types if needed.
+        // For example, if two objects have the exact same sortY, which one draws on top?
+        // This is where explicit drawing order (e.g., ground first, then trunks, then player, then leaves) helps.
         const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
@@ -355,7 +362,6 @@ function draw() {
     // Draw all sorted entities
     drawables.forEach(entity => {
         if (entity.type === 'groundPatch') {
-            // Each ground patch is drawn as a TILE_ISO_WIDTH/HEIGHT diamond
             drawIsometricDiamond(entity.colors, entity.screenX, entity.screenY, entity.isoWidth, entity.isoHeight);
         } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'playerLeg' || entity.type === 'playerBody') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);

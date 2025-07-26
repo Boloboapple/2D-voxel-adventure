@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 6; // <--- INCREMENTED TO 6 FOR THIS FIX!
+const GAME_VERSION = 7; // <--- INCREMENTED TO 7 FOR PLAYER BODY/LEG SEPARATION IN SORTING!
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -89,6 +89,10 @@ const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
 const PLAYER_LEG_Z_HEIGHT = TILE_ISO_HEIGHT * 0.5; // Adjusted height of each leg segment to be shorter
 const PLAYER_LEG_ISO_WIDTH = TILE_ISO_WIDTH * 0.2; // Width of each leg
 const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2; // Height of each leg's top diamond
+
+// How much the player's entire figure is visually lifted from the tile's base.
+// This is for visual appeal, not sorting.
+const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
 
 // --- Coordinate Conversion Function (Grid to Isometric Screen) ---
@@ -156,72 +160,6 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
     ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight); // Top-middle
     ctx.closePath();
     ctx.fill();
-}
-
-// Draws the player as a simple 3D block figure with animated legs
-function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
-    const screenPos = isoToScreen(drawX, drawY);
-
-    // Animation offset for legs
-    let animOffsetA = 0;
-    let animOffsetB = 0;
-
-    // A simple 4-frame animation cycle for walking
-    if (player.isMoving) {
-        const frame = player.animationFrame;
-        // Adjust leg Y position to simulate lifting
-        const liftAmount = TILE_ISO_HEIGHT * 0.08; // How much legs lift
-        if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
-        else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
-        else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
-        else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
-    }
-
-    // Calculate base position for the player figure
-    // Player's feet should be at the base of the tile (screenPos.y + TILE_ISO_HEIGHT)
-    const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
-
-    // Lift the player figure slightly above the tile's base for visual clarity
-    // This value now only lifts the entire player structure, not for sorting purposes
-    const playerVisualLiftOffset = TILE_ISO_HEIGHT * 0.5;
-
-    // Calculate the top of the legs, which is where the body will sit
-    // This ensures legs are drawn below the body and don't overlap as much
-    const legsTopY = playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerVisualLiftOffset;
-
-    // Draw Legs FIRST so the body sits on top of them
-    // Leg A (front-left/right)
-    drawIsometric3DBlock(
-        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
-        legsTopY + animOffsetA, // Base for this leg
-        PLAYER_LEG_Z_HEIGHT,
-        PLAYER_LEG_ISO_WIDTH,
-        PLAYER_LEG_ISO_HEIGHT,
-        player.legColor
-    );
-
-    // Leg B (back-right/left)
-    drawIsometric3DBlock(
-        screenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1), // Offset from body center
-        legsTopY + animOffsetB, // Base for this leg
-        PLAYER_LEG_Z_HEIGHT,
-        PLAYER_LEG_ISO_WIDTH,
-        PLAYER_LEG_ISO_HEIGHT,
-        player.legColor
-    );
-
-    // Draw Body SECOND, sitting on top of the legs
-    // The bottom of the body should align with the top of the legs
-    const bodyTopY = legsTopY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2);
-
-    drawIsometric3DBlock(
-        screenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2), // Center body horizontally
-        bodyTopY, // Position body top relative to calculated leg top
-        PLAYER_BODY_Z_HEIGHT,
-        PLAYER_BODY_ISO_WIDTH,
-        PLAYER_BODY_ISO_HEIGHT,
-        player.bodyColor
-    );
 }
 
 
@@ -416,20 +354,71 @@ function draw() {
         }
     }
 
-    // Add player to drawables
-    const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
+    // --- Add Player components to drawables separately ---
+    const playerScreenPos = isoToScreen(player.x, player.y);
 
-    // *** CRITICAL CHANGE HERE based on your insight: ***
-    // The player's sortY should correspond to the lowest point of their feet on the ground.
-    // This is equivalent to the base of the tile they are standing on.
-    // The '+ 0.1' epsilon ensures they are always drawn *after* the ground tile they are on.
-    const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1;
+    // Animation offset for legs
+    let animOffsetA = 0;
+    let animOffsetB = 0;
 
+    if (player.isMoving) {
+        const frame = player.animationFrame;
+        const liftAmount = TILE_ISO_HEIGHT * 0.08;
+        if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
+        else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
+    }
+
+    // Calculate base Y for the entire player figure (feet on the ground)
+    const playerBaseY = playerScreenPos.y + TILE_ISO_HEIGHT;
+
+    // Calculate the top of the legs relative to playerBaseY and visual lift
+    const legsTopY = playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - PLAYER_VISUAL_LIFT_OFFSET;
+
+    // Leg A (front-left/right)
     drawables.push({
-        type: 'player',
-        x: player.x, // Store interpolated positions for drawing
-        y: player.y,
-        sortY: playerEffectiveSortY // The primary sort key for depth
+        type: 'playerLeg',
+        x: player.x, y: player.y,
+        screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1),
+        screenY: legsTopY + animOffsetA,
+        zHeight: PLAYER_LEG_Z_HEIGHT,
+        isoWidth: PLAYER_LEG_ISO_WIDTH,
+        isoHeight: PLAYER_LEG_ISO_HEIGHT,
+        colors: player.legColor,
+        // The sortY for the leg should be its lowest point.
+        // It should be just above the tile (playerBaseY + epsilon).
+        sortY: playerBaseY + 0.01 // Small epsilon to draw above the tile
+    });
+
+    // Leg B (back-right/left)
+    drawables.push({
+        type: 'playerLeg',
+        x: player.x, y: player.y,
+        screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1),
+        screenY: legsTopY + animOffsetB,
+        zHeight: PLAYER_LEG_Z_HEIGHT,
+        isoWidth: PLAYER_LEG_ISO_WIDTH,
+        isoHeight: PLAYER_LEG_ISO_HEIGHT,
+        colors: player.legColor,
+        // The sortY for the leg should be its lowest point.
+        sortY: playerBaseY + 0.02 // Slightly larger epsilon for the second leg to draw it slightly above the first if they're on the same Y
+    });
+
+    // Player Body
+    const bodyTopY = legsTopY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2);
+    drawables.push({
+        type: 'playerBody',
+        x: player.x, y: player.y,
+        screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2),
+        screenY: bodyTopY,
+        zHeight: PLAYER_BODY_Z_HEIGHT,
+        isoWidth: PLAYER_BODY_ISO_WIDTH,
+        isoHeight: PLAYER_BODY_ISO_HEIGHT,
+        colors: player.bodyColor,
+        // The sortY for the body should be its lowest point, which is where it connects to the legs.
+        // This means it should be drawn *after* the legs.
+        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.03 // Adjust this carefully
     });
 
 
@@ -448,8 +437,8 @@ function draw() {
             return a.x - b.x;
         }
         // Tie-breaker for objects on the exact same tile and same sortY (e.g., player vs. tree components)
-        // Order based on your request: Tile -> Tree Trunk -> Player -> Tree Leaves
-        const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'player': 2, 'treeLeaves': 3 };
+        // Order based on your request: Tile -> Tree Trunk -> Player Legs -> Player Body -> Tree Leaves
+        const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
 
@@ -461,10 +450,9 @@ function draw() {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         } else if (entity.type === 'treeLeaves') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
-        } else if (entity.type === 'player') {
-            // Player's drawPlayer function uses player.x/y, which are interpolated.
-            // So we pass the interpolated values to the drawPlayer function.
-            drawPlayer(player.x, player.y);
+        } else if (entity.type === 'playerLeg' || entity.type === 'playerBody') {
+            // These now have all the necessary properties in their entity object
+            drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         }
     });
 }

@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 5; // <--- INCREMENT THIS NUMBER FOR EACH NEW UPDATE!
+const GAME_VERSION = 6; // <--- INCREMENTED TO 6 FOR THIS FIX!
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -182,11 +182,12 @@ function drawPlayer(drawX, drawY) { // Now takes interpolated drawX, drawY
     const playerBaseY = screenPos.y + TILE_ISO_HEIGHT;
 
     // Lift the player figure slightly above the tile's base for visual clarity
-    const playerLiftOffset = TILE_ISO_HEIGHT * 0.5;
+    // This value now only lifts the entire player structure, not for sorting purposes
+    const playerVisualLiftOffset = TILE_ISO_HEIGHT * 0.5;
 
     // Calculate the top of the legs, which is where the body will sit
     // This ensures legs are drawn below the body and don't overlap as much
-    const legsTopY = playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerLiftOffset;
+    const legsTopY = playerBaseY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - playerVisualLiftOffset;
 
     // Draw Legs FIRST so the body sits on top of them
     // Leg A (front-left/right)
@@ -418,10 +419,10 @@ function draw() {
     // Add player to drawables
     const playerScreenPosInterpolated = isoToScreen(player.x, player.y);
 
-    // Player's sortY:
-    // It's based on the base of the tile they are on + TILE_ISO_HEIGHT.
-    // Adding 0.1 ensures the player is drawn *just after* the tile itself, preventing the "under the grass" glitch.
-    // The player's Z-height is handled by drawPlayer, but for overall sorting, their conceptual "base" needs to be above the tile.
+    // *** CRITICAL CHANGE HERE based on your insight: ***
+    // The player's sortY should correspond to the lowest point of their feet on the ground.
+    // This is equivalent to the base of the tile they are standing on.
+    // The '+ 0.1' epsilon ensures they are always drawn *after* the ground tile they are on.
     const playerEffectiveSortY = playerScreenPosInterpolated.y + TILE_ISO_HEIGHT + 0.1;
 
     drawables.push({

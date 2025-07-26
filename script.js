@@ -6,77 +6,77 @@ const ctx = canvas.getContext('2d');
 const TILE_ISO_WIDTH = 64; // Base unit for isometric scaling
 const TILE_ISO_HEIGHT = 32; // Base unit for isometric scaling
 
-// Define the logical "world size" in terms of how many "base units" it spans
-const WORLD_UNITS_WIDTH = 60; // Increased size for a much larger world!
-const WORLD_UNITS_HEIGHT = 45; // Increased size for a much larger world!
+const WORLD_UNITS_WIDTH = 60;
+const WORLD_UNITS_HEIGHT = 45;
 
-// Toggle to draw borders around ground patches
 const DRAW_GROUND_BORDERS = false;
 const GROUND_BORDER_COLOR = '#000000';
 const GROUND_BORDER_THICKNESS = 1;
 
-// Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3;
 
-// --- Set Canvas Dimensions to a Fixed Size ---
-// This is more typical for games with a moving camera.
-// Adjust these values to your desired game window size.
-canvas.width = 1280; // Example: HD width
-canvas.height = 720; // Example: HD height
+// Set Canvas Dimensions to a Fixed Size
+canvas.width = 1280;
+canvas.height = 720;
 
-// --- Global Offset for the Isometric Drawing ---
-// These offsets now define the center of the canvas in screen coordinates.
-// isoToScreen(camera.x, camera.y) will map to these coordinates.
+// Global Offset for the Isometric Drawing - Center of the canvas
 const initialGlobalDrawOffsetX = canvas.width / 2;
-const initialGlobalDrawOffsetY = (canvas.height / 2) + (MAX_OBJECT_HEIGHT_FROM_GROUND / 2); // Center vertically, adjusted for tall objects
+const initialGlobalDrawOffsetY = (canvas.height / 2) + (MAX_OBJECT_HEIGHT_FROM_GROUND / 2);
 
 // Debugging: Log calculated values
 console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
 console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${initialGlobalDrawOffsetY}`);
 
-
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 27; // <--- INCREMENTED TO 27 for fixed canvas, corrected offsets, visible version
+const GAME_VERSION = 28; // <--- INCREMENTED TO 28 for enemy warriors (spawning, idle, chasing, basic hitbox, health)
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
 
 // --- Colors for biomes and objects ---
 const BIOME_COLORS = {
-    'ground': { top: '#66BB6A', left: '#4CAF50', right: '#388E3C' }, // Plains green
-    'lake': { top: '#64B5F6', left: '#2196F3', right: '#1976D2' },   // Blue for lake water
-    'forest': { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' }, // Darker green for forest ground
-    'desert': { top: '#FFEB3B', left: '#FBC02D', right: '#F57F17' }, // Sandy yellow
-    'mountain': { top: '#B0BEC5', left: '#90A4AE', right: '#78909C' } // Grey for mountains (currently flat)
+    'ground': { top: '#66BB6A', left: '#4CAF50', right: '#388E3C' },
+    'lake': { top: '#64B5F6', left: '#2196F3', right: '#1976D2' },
+    'forest': { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' },
+    'desert': { top: '#FFEB3B', left: '#FBC02D', right: '#F57F17' },
+    'mountain': { top: '#B0BEC5', left: '#90A4AE', right: '#78909C' }
 };
 
-const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; // Brown for tree trunk
-const TREE_LEAVES_COLOR = { top: '#7CB342', left: '#689F38', right: '#558B2F' }; // Green for tree leaves
+const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' };
+const TREE_LEAVES_COLOR = { top: '#7CB342', left: '#689F38', right: '#558B2F' };
+
+const PLAYER_BODY_COLOR = { top: '#FFD700', left: '#DAA520', right: '#B8860B' }; // Gold
+const PLAYER_LEG_COLOR = { top: '#CD853F', left: '#8B4513', right: '#A0522D' }; // Brown
+
+const WARRIOR_BODY_COLOR = { top: '#B22222', left: '#8B0000', right: '#660000' }; // Dark Red
+const WARRIOR_LEG_COLOR = { top: '#4F4F4F', left: '#363636', right: '#292929' }; // Dark Grey
 
 // --- Player Object ---
 const player = {
     x: WORLD_UNITS_WIDTH / 2,
     y: WORLD_UNITS_HEIGHT / 2,
-    bodyColor: { top: '#FFD700', left: '#DAA520', right: '#B8860B' }, // Gold colors for body
-    legColor: { top: '#CD853F', left: '#8B4513', right: '#A0522D' }, // Brown colors for legs
+    bodyColor: PLAYER_BODY_COLOR,
+    legColor: PLAYER_LEG_COLOR,
     isMoving: false,
     moveSpeed: 0.05,
     animationFrame: 0,
     animationSpeed: 5,
-    frameCount: 0
+    frameCount: 0,
+    health: 100, // Player health
+    maxHealth: 100
 };
 
-// Define player body and leg dimensions relative to tile size
-const PLAYER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8;
-const PLAYER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
-const PLAYER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
+// Define character dimensions relative to tile size
+const CHARACTER_BODY_Z_HEIGHT = TILE_ISO_HEIGHT * 0.8;
+const CHARACTER_BODY_ISO_WIDTH = TILE_ISO_WIDTH * 0.5;
+const CHARACTER_BODY_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.5;
 
-const PLAYER_LEG_Z_HEIGHT = TILE_ISO_HEIGHT * 0.5;
-const PLAYER_LEG_ISO_WIDTH = TILE_ISO_WIDTH * 0.2;
-const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
+const CHARACTER_LEG_Z_HEIGHT = TILE_ISO_HEIGHT * 0.5;
+const CHARACTER_LEG_ISO_WIDTH = TILE_ISO_WIDTH * 0.2;
+const CHARACTER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
 
-const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
+const CHARACTER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
 // --- Camera Object ---
 const camera = {
@@ -84,20 +84,36 @@ const camera = {
     y: player.y
 };
 
+// --- Enemy Warrior Configuration ---
+const warriors = [];
+const WARRIOR_SPAWN_INTERVAL = 30 * 1000; // 30 seconds in milliseconds
+let lastWarriorSpawnTime = 0;
+const MAX_WARRIORS = 10; // Cap the number of warriors
+
+const WARRIOR_AGGRO_RANGE = 5; // Distance in world units for player detection
+const WARRIOR_MOVE_SPEED = 0.03; // Warriors move slightly slower than player
+const WARRIOR_IDLE_MOVE_CHANCE = 0.02; // Chance per frame for idle warrior to move
+const WARRIOR_HEALTH = 50; // Warrior health
+
+// Warrior states
+const WARRIOR_STATE = {
+    IDLE: 'idle',
+    CHASING: 'chasing',
+    ATTACKING: 'attacking' // Will implement in next phase
+};
+
 // --- World Data Structure ---
-const worldMap = []; // Stores biome type for each (x,y) unit
-const trees = []; // Stores tree objects (x,y)
+const worldMap = [];
+const trees = [];
 
 // --- Keyboard Input State ---
 const keysPressed = {};
 
 // --- Coordinate Conversion Function (World Unit to Isometric Screen) ---
 function isoToScreen(x, y) {
-    // Calculate position relative to camera
     const relativeX = x - camera.x;
     const relativeY = y - camera.y;
 
-    // Apply isometric projection relative to the center of the canvas
     const screenX = (relativeX - relativeY) * (TILE_ISO_WIDTH / 2) + initialGlobalDrawOffsetX;
     const screenY = (relativeX + relativeY) * (TILE_ISO_HEIGHT / 2) + initialGlobalDrawOffsetY;
     return { x: screenX, y: screenY };
@@ -108,13 +124,12 @@ function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, 
     const halfIsoWidth = isoWidth / 2;
     const halfIsoHeight = isoHeight / 2;
 
-    // Top face
     ctx.fillStyle = colorSet.top;
     ctx.beginPath();
-    ctx.moveTo(screenX_top_middle, screenY_top_middle + halfIsoHeight); // Left middle
-    ctx.lineTo(screenX_top_middle + halfIsoWidth, screenY_top_middle); // Top middle
-    ctx.lineTo(screenX_top_middle + isoWidth, screenY_top_middle + halfIsoHeight); // Right middle
-    ctx.lineTo(screenX_top_middle + halfIsoWidth, screenY_top_middle + isoHeight); // Bottom middle
+    ctx.moveTo(screenX_top_middle, screenY_top_middle + halfIsoHeight);
+    ctx.lineTo(screenX_top_middle + halfIsoWidth, screenY_top_middle);
+    ctx.lineTo(screenX_top_middle + isoWidth, screenY_top_middle + halfIsoHeight);
+    ctx.lineTo(screenX_top_middle + halfIsoWidth, screenY_top_middle + isoHeight);
     ctx.closePath();
     ctx.fill();
 
@@ -143,9 +158,9 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
     ctx.fillStyle = colors.left;
     ctx.beginPath();
     ctx.moveTo(screenX_top_middle, screenY_top_middle + halfBlockIsoHeight);
-    ctx.lineTo(screenX_top_middle, screenY_top_middle + halfBlockIsoHeight + blockZHeight); // Bottom-left
-    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight + blockZHeight); // Bottom-middle
-    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight); // Top-middle
+    ctx.lineTo(screenX_top_middle, screenY_top_middle + halfBlockIsoHeight + blockZHeight);
+    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight + blockZHeight);
+    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight);
     ctx.closePath();
     ctx.fill();
 
@@ -153,11 +168,63 @@ function drawIsometric3DBlock(screenX_top_middle, screenY_top_middle, blockZHeig
     ctx.fillStyle = colors.right;
     ctx.beginPath();
     ctx.moveTo(screenX_top_middle + blockIsoWidth, screenY_top_middle + halfBlockIsoHeight);
-    ctx.lineTo(screenX_top_middle + blockIsoWidth, screenY_top_middle + halfBlockIsoHeight + blockZHeight); // Bottom-right
-    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight + blockZHeight); // Bottom-middle
-    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight); // Top-middle
+    ctx.lineTo(screenX_top_middle + blockIsoWidth, screenY_top_middle + halfBlockIsoHeight + blockZHeight);
+    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight + blockZHeight);
+    ctx.lineTo(screenX_top_middle + halfBlockIsoWidth, screenY_top_middle + blockIsoHeight);
     ctx.closePath();
     ctx.fill();
+}
+
+function drawCharacter(character, screenPos, sortY) {
+    let animOffsetA = 0;
+    let animOffsetB = 0;
+
+    if (character.isMoving) {
+        const frame = character.animationFrame;
+        const liftAmount = TILE_ISO_HEIGHT * 0.08;
+        if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
+        else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
+    }
+
+    // Legs
+    drawables.push({
+        type: 'characterPart',
+        x: character.x, y: character.y,
+        screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (CHARACTER_BODY_ISO_WIDTH / 2) + (CHARACTER_BODY_ISO_WIDTH * 0.1),
+        screenY: screenPos.y + TILE_ISO_HEIGHT - CHARACTER_VISUAL_LIFT_OFFSET - CHARACTER_LEG_Z_HEIGHT + (CHARACTER_LEG_ISO_HEIGHT / 2) + animOffsetA,
+        zHeight: CHARACTER_LEG_Z_HEIGHT,
+        isoWidth: CHARACTER_LEG_ISO_WIDTH,
+        isoHeight: CHARACTER_LEG_ISO_HEIGHT,
+        colors: character.legColor,
+        sortY: sortY + 0.003
+    });
+
+    drawables.push({
+        type: 'characterPart',
+        x: character.x, y: character.y,
+        screenX: screenPos.x + (TILE_ISO_WIDTH / 2) + (CHARACTER_BODY_ISO_WIDTH / 2) - (CHARACTER_LEG_ISO_WIDTH) - (CHARACTER_BODY_ISO_WIDTH * 0.1),
+        screenY: screenPos.y + TILE_ISO_HEIGHT - CHARACTER_VISUAL_LIFT_OFFSET - CHARACTER_LEG_Z_HEIGHT + (CHARACTER_LEG_ISO_HEIGHT / 2) + animOffsetB,
+        zHeight: CHARACTER_LEG_Z_HEIGHT,
+        isoWidth: CHARACTER_LEG_ISO_WIDTH,
+        isoHeight: CHARACTER_LEG_ISO_HEIGHT,
+        colors: character.legColor,
+        sortY: sortY + 0.0031
+    });
+
+    // Body
+    drawables.push({
+        type: 'characterPart',
+        x: character.x, y: character.y,
+        screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (CHARACTER_BODY_ISO_WIDTH / 2),
+        screenY: screenPos.y + TILE_ISO_HEIGHT - CHARACTER_VISUAL_LIFT_OFFSET - CHARACTER_LEG_Z_HEIGHT - CHARACTER_BODY_Z_HEIGHT + (CHARACTER_BODY_ISO_HEIGHT / 2),
+        zHeight: CHARACTER_BODY_Z_HEIGHT,
+        isoWidth: CHARACTER_BODY_ISO_WIDTH,
+        isoHeight: CHARACTER_BODY_ISO_HEIGHT,
+        colors: character.bodyColor,
+        sortY: sortY + 0.0032
+    });
 }
 
 
@@ -169,7 +236,6 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
 
     const addTileToQueue = (x, y) => {
         const key = `${x},${y}`;
-        // Only place on empty 'ground' tiles for new biomes
         if (x >= 0 && x < WORLD_UNITS_WIDTH && y >= 0 && y < WORLD_UNITS_HEIGHT &&
             map[y][x] === 'ground' && !visited.has(key)) {
             map[y][x] = biomeType;
@@ -187,8 +253,8 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
             const { x, y } = queue[head++];
 
             const directions = [
-                { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }, // Cardinal
-                { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }  // Diagonal
+                { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+                { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }
             ];
             directions.sort(() => Math.random() - 0.5);
 
@@ -209,7 +275,6 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
 
 // --- Initial Map/World Setup Function ---
 function setupWorld() {
-    // Initialize worldMap with 'ground' everywhere
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         worldMap[y] = [];
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
@@ -217,26 +282,25 @@ function setupWorld() {
         }
     }
 
-    trees.length = 0; // Clear previous trees
+    trees.length = 0;
+    warriors.length = 0; // Clear warriors on new map generation
 
-    // Define biome types and their generation parameters
     const biomesToGenerate = [
-        { type: 'lake', maxTilesFactor: 0.03, spreadChance: 0.6, numInstances: 3 }, // 3 small lakes
-        { type: 'forest', maxTilesFactor: 0.08, spreadChance: 0.7, numInstances: 4 }, // 4 medium forests
-        { type: 'desert', maxTilesFactor: 0.15, spreadChance: 0.65, numInstances: 2 }, // 2 larger deserts
-        { type: 'mountain', maxTilesFactor: 0.06, spreadChance: 0.55, numInstances: 2 } // 2 mountain ranges (still flat visually)
+        { type: 'lake', maxTilesFactor: 0.03, spreadChance: 0.6, numInstances: 3 },
+        { type: 'forest', maxTilesFactor: 0.08, spreadChance: 0.7, numInstances: 4 },
+        { type: 'desert', maxTilesFactor: 0.15, spreadChance: 0.65, numInstances: 2 },
+        { type: 'mountain', maxTilesFactor: 0.06, spreadChance: 0.55, numInstances: 2 }
     ];
 
     biomesToGenerate.forEach(biomeConfig => {
         for (let i = 0; i < biomeConfig.numInstances; i++) {
-            const startX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2); // Start within middle 60%
+            const startX = Math.floor(Math.random() * (WORLD_UNITS_WIDTH * 0.6) + WORLD_UNITS_WIDTH * 0.2);
             const startY = Math.floor(Math.random() * (WORLD_UNITS_HEIGHT * 0.6) + WORLD_UNITS_HEIGHT * 0.2);
             const maxTiles = Math.floor(WORLD_UNITS_WIDTH * WORLD_UNITS_HEIGHT * biomeConfig.maxTilesFactor);
             generateOrganicBiome(worldMap, biomeConfig.type, startX, startY, maxTiles, biomeConfig.spreadChance);
         }
     });
 
-    // Place trees within the forest biome based on the generated worldMap
     const treeDensity = 0.4;
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
@@ -249,10 +313,11 @@ function setupWorld() {
     // Place player at a valid starting position
     player.x = WORLD_UNITS_WIDTH / 2;
     player.y = WORLD_UNITS_HEIGHT / 2;
+    player.health = player.maxHealth; // Reset player health
+
     let playerGridX = Math.floor(player.x);
     let playerGridY = Math.floor(player.y);
 
-    // Ensure player starts on a 'ground' tile
     if (worldMap[playerGridY] && (worldMap[playerGridY][playerGridX] !== 'ground')) {
         let foundGround = false;
         for (let radius = 1; radius < Math.max(WORLD_UNITS_WIDTH, WORLD_UNITS_HEIGHT); radius++) {
@@ -277,25 +342,214 @@ function setupWorld() {
         }
     }
 
-    // Initialize camera to player's exact position (snapped)
     camera.x = player.x;
     camera.y = player.y;
 
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;
+
+    lastWarriorSpawnTime = Date.now(); // Reset spawn timer
+}
+
+// --- Helper for collision detection ---
+function isWalkable(x, y) {
+    if (x < 0 || x >= WORLD_UNITS_WIDTH || y < 0 || y >= WORLD_UNITS_HEIGHT) {
+        return false; // Out of bounds
+    }
+    const gridX = Math.floor(x);
+    const gridY = Math.floor(y);
+    const biomeType = worldMap[gridY][gridX];
+
+    if (biomeType === 'lake' || biomeType === 'mountain') {
+        return false;
+    }
+
+    if (biomeType === 'forest') {
+        const treePresent = trees.some(tree =>
+            Math.floor(tree.x) === gridX &&
+            Math.floor(tree.y) === gridY
+        );
+        if (treePresent) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// --- Warrior Logic ---
+function spawnWarrior() {
+    if (warriors.length >= MAX_WARRIORS) return;
+
+    let spawnX, spawnY;
+    let attempts = 0;
+    const maxAttempts = 100;
+
+    // Try to find a spawn location that is 'ground' and not too close to the player
+    do {
+        spawnX = Math.floor(Math.random() * WORLD_UNITS_WIDTH);
+        spawnY = Math.floor(Math.random() * WORLD_UNITS_HEIGHT);
+        attempts++;
+    } while ((!isWalkable(spawnX, spawnY) ||
+              Math.sqrt(Math.pow(spawnX - player.x, 2) + Math.pow(spawnY - player.y, 2)) < WARRIOR_AGGRO_RANGE * 2) && // Spawn further away
+             attempts < maxAttempts);
+
+    if (attempts >= maxAttempts) {
+        console.warn("Could not find suitable spawn location for warrior.");
+        return;
+    }
+
+    warriors.push({
+        x: spawnX + 0.5, // Center on tile
+        y: spawnY + 0.5,
+        bodyColor: WARRIOR_BODY_COLOR,
+        legColor: WARRIOR_LEG_COLOR,
+        isMoving: false,
+        animationFrame: 0,
+        animationSpeed: 10, // Slower animation than player
+        frameCount: 0,
+        health: WARRIOR_HEALTH,
+        maxHealth: WARRIOR_HEALTH,
+        state: WARRIOR_STATE.IDLE,
+        targetX: null, // For idle movement
+        targetY: null,
+        aggroRange: WARRIOR_AGGRO_RANGE,
+        attackRange: 0.8 // Warrior must be close to attack
+    });
+    console.log(`Warrior spawned at (${spawnX}, ${spawnY}). Total warriors: ${warriors.length}`);
+}
+
+function updateWarriors() {
+    warriors.forEach((warrior, index) => {
+        const distToPlayer = Math.sqrt(Math.pow(warrior.x - player.x, 2) + Math.pow(warrior.y - player.y, 2));
+
+        // State Transition: IDLE to CHASING
+        if (warrior.state === WARRIOR_STATE.IDLE && distToPlayer <= warrior.aggroRange) {
+            warrior.state = WARRIOR_STATE.CHASING;
+            console.log(`Warrior ${index} is now CHASING player.`);
+        }
+        // State Transition: CHASING to IDLE (if player gets too far)
+        else if (warrior.state === WARRIOR_STATE.CHASING && distToPlayer > warrior.aggroRange * 1.5) { // Needs a larger 'drop aggro' range
+            warrior.state = WARRIOR_STATE.IDLE;
+            console.log(`Warrior ${index} is now IDLE (player too far).`);
+            warrior.targetX = null;
+            warrior.targetY = null;
+        }
+
+        // Behavior based on state
+        if (warrior.state === WARRIOR_STATE.CHASING) {
+            warrior.isMoving = true;
+            // Move towards the player
+            let dx = player.x - warrior.x;
+            let dy = player.y - warrior.y;
+            const magnitude = Math.sqrt(dx * dx + dy * dy);
+
+            if (magnitude > warrior.attackRange) { // Only move if not in attack range
+                dx /= magnitude; // Normalize
+                dy /= magnitude;
+
+                let potentialNewX = warrior.x + dx * WARRIOR_MOVE_SPEED;
+                let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
+
+                // Simple collision for warriors (only check walkability)
+                if (isWalkable(potentialNewX, potentialNewY)) {
+                    warrior.x = potentialNewX;
+                    warrior.y = potentialNewY;
+                } else {
+                    // Try to move around obstacle (basic)
+                    if (isWalkable(warrior.x + dx * WARRIOR_MOVE_SPEED, warrior.y)) {
+                        warrior.x += dx * WARRIOR_MOVE_SPEED;
+                    } else if (isWalkable(warrior.x, warrior.y + dy * WARRIOR_MOVE_SPEED)) {
+                        warrior.y += dy * WARRIOR_MOVE_SPEED;
+                    }
+                    // Could add more sophisticated pathfinding here
+                }
+            } else {
+                // If in attack range, stop moving and prepare to attack (next phase)
+                warrior.isMoving = false;
+                // Transition to attacking state here in next phase
+            }
+        } else if (warrior.state === WARRIOR_STATE.IDLE) {
+            // Idle movement: occasionally pick a random nearby tile and move to it
+            if (!warrior.isMoving && Math.random() < WARRIOR_IDLE_MOVE_CHANCE) {
+                let foundTarget = false;
+                let attempts = 0;
+                const maxIdleAttempts = 5;
+                while (!foundTarget && attempts < maxIdleAttempts) {
+                    const randomOffsetMagnitude = Math.random() * 3 + 1; // Move 1-4 units
+                    const randomAngle = Math.random() * Math.PI * 2;
+                    const targetCandidateX = Math.floor(warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude);
+                    const targetCandidateY = Math.floor(warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude);
+
+                    if (isWalkable(targetCandidateX, targetCandidateY)) {
+                        warrior.targetX = targetCandidateX + 0.5;
+                        warrior.targetY = targetCandidateY + 0.5;
+                        warrior.isMoving = true;
+                        foundTarget = true;
+                    }
+                    attempts++;
+                }
+            }
+
+            if (warrior.isMoving && warrior.targetX !== null && warrior.targetY !== null) {
+                let dx = warrior.targetX - warrior.x;
+                let dy = warrior.targetY - warrior.y;
+                const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
+
+                if (distanceToTarget < WARRIOR_MOVE_SPEED) { // Reached target
+                    warrior.x = warrior.targetX;
+                    warrior.y = warrior.targetY;
+                    warrior.isMoving = false;
+                    warrior.targetX = null;
+                    warrior.targetY = null;
+                } else {
+                    dx /= distanceToTarget;
+                    dy /= distanceToTarget;
+
+                    let potentialNewX = warrior.x + dx * WARRIOR_MOVE_SPEED;
+                    let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
+
+                    if (isWalkable(potentialNewX, potentialNewY)) {
+                        warrior.x = potentialNewX;
+                        warrior.y = potentialNewY;
+                    } else {
+                        // Stop if blocked
+                        warrior.isMoving = false;
+                        warrior.targetX = null;
+                        warrior.targetY = null;
+                    }
+                }
+            }
+        }
+
+        // Animation update for warrior
+        if (warrior.isMoving) {
+            warrior.frameCount++;
+            if (warrior.frameCount % warrior.animationSpeed === 0) {
+                warrior.animationFrame = (warrior.animationFrame + 1) % 4;
+            }
+        } else {
+            warrior.frameCount = 0;
+            warrior.animationFrame = 0;
+        }
+
+        // Remove dead warriors (for future attack system)
+        if (warrior.health <= 0) {
+            warriors.splice(index, 1);
+            console.log(`Warrior ${index} defeated! Remaining warriors: ${warriors.length}`);
+        }
+    });
 }
 
 
 // --- Main Drawing Function ---
+let drawables = []; // Make this global or pass it around if needed by other functions
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawables = []; // Clear drawables array for each frame
 
-    const drawables = [];
-
-    // --- Culling for drawing efficiency ---
-    // Calculate visible area in world units based on canvas dimensions and tile size
-    // We add a buffer (e.g., +4) to ensure things near the edge are drawn
+    // Calculate visible area in world units for culling
     const visibleWorldWidth = (canvas.width / (TILE_ISO_WIDTH / 2)) + 4;
     const visibleWorldHeight = (canvas.height / (TILE_ISO_HEIGHT / 2)) + 4;
 
@@ -304,19 +558,16 @@ function draw() {
     const startGridY = Math.max(0, Math.floor(camera.y - visibleWorldHeight / 2));
     const endGridY = Math.min(WORLD_UNITS_HEIGHT, Math.ceil(camera.y + visibleWorldHeight / 2));
 
-
-    // Add Ground Patches to drawables
+    // Add Ground Patches
     for (let y = startGridY; y < endGridY; y++) {
         for (let x = startGridX; x < endGridX; x++) {
             const screenPos = isoToScreen(x, y);
 
-            // Additional check to only draw if the specific tile is on screen
             if (screenPos.x + TILE_ISO_WIDTH > 0 && screenPos.x < canvas.width &&
                 screenPos.y + TILE_ISO_HEIGHT + MAX_OBJECT_HEIGHT_FROM_GROUND > 0 && screenPos.y < canvas.height) {
 
                 const biomeType = worldMap[y] ? worldMap[y][x] : 'ground';
                 const tileColors = BIOME_COLORS[biomeType] || BIOME_COLORS['ground'];
-                const isWater = (biomeType === 'lake');
 
                 drawables.push({
                     type: 'groundPatch',
@@ -326,21 +577,18 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH,
                     isoHeight: TILE_ISO_HEIGHT,
                     colors: tileColors,
-                    isWater: isWater,
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // Ground patches are the base layer
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0
                 });
             }
         }
     }
 
-
-    // Add Trees to drawables
+    // Add Trees
     trees.forEach(tree => {
         const treeScreenPos = isoToScreen(tree.x, tree.y);
 
-        // More robust frustum culling for trees
         if (treeScreenPos.x + TILE_ISO_WIDTH > 0 && treeScreenPos.x < canvas.width &&
-            treeScreenPos.y + MAX_OBJECT_HEIGHT_FROM_GROUND > 0 && treeScreenPos.y < canvas.height + TILE_ISO_HEIGHT) { // Check if tree base is on screen
+            treeScreenPos.y + MAX_OBJECT_HEIGHT_FROM_GROUND > 0 && treeScreenPos.y < canvas.height + TILE_ISO_HEIGHT) {
 
             const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0;
             const TRUNK_ISO_WIDTH_SCALE = 0.4;
@@ -381,66 +629,31 @@ function draw() {
         }
     });
 
-    // --- Add Player components to drawables ---
+    // Add Player components
     const playerScreenPos = isoToScreen(player.x, player.y);
+    const playerSortY = playerScreenPos.y + TILE_ISO_HEIGHT + CHARACTER_LEG_Z_HEIGHT + CHARACTER_BODY_Z_HEIGHT;
+    drawCharacter(player, playerScreenPos, playerSortY);
 
-    let animOffsetA = 0;
-    let animOffsetB = 0;
+    // Add Warriors components
+    warriors.forEach(warrior => {
+        const warriorScreenPos = isoToScreen(warrior.x, warrior.y);
+        const warriorSortY = warriorScreenPos.y + TILE_ISO_HEIGHT + CHARACTER_LEG_Z_HEIGHT + CHARACTER_BODY_Z_HEIGHT;
 
-    if (player.isMoving) {
-        const frame = player.animationFrame;
-        const liftAmount = TILE_ISO_HEIGHT * 0.08;
-        if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
-        else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
-        else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
-        else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
-    }
-
-    const playerSortY = playerScreenPos.y + TILE_ISO_HEIGHT + PLAYER_LEG_Z_HEIGHT + PLAYER_BODY_Z_HEIGHT;
-
-    drawables.push({
-        type: 'playerLeg',
-        x: player.x, y: player.y,
-        screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1),
-        screenY: playerScreenPos.y + TILE_ISO_HEIGHT - PLAYER_VISUAL_LIFT_OFFSET - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetA,
-        zHeight: PLAYER_LEG_Z_HEIGHT,
-        isoWidth: PLAYER_LEG_ISO_WIDTH,
-        isoHeight: PLAYER_LEG_ISO_HEIGHT,
-        colors: player.legColor,
-        sortY: playerSortY + 0.003
-    });
-
-    drawables.push({
-        type: 'playerLeg',
-        x: player.x, y: player.y,
-        screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1),
-        screenY: playerScreenPos.y + TILE_ISO_HEIGHT - PLAYER_VISUAL_LIFT_OFFSET - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetB,
-        zHeight: PLAYER_LEG_Z_HEIGHT,
-        isoWidth: PLAYER_LEG_ISO_WIDTH,
-        isoHeight: PLAYER_LEG_ISO_HEIGHT,
-        colors: player.legColor,
-        sortY: playerSortY + 0.0031
-    });
-
-    drawables.push({
-        type: 'playerBody',
-        x: player.x, y: player.y,
-        screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2),
-        screenY: playerScreenPos.y + TILE_ISO_HEIGHT - PLAYER_VISUAL_LIFT_OFFSET - PLAYER_LEG_Z_HEIGHT - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2),
-        zHeight: PLAYER_BODY_Z_HEIGHT,
-        isoWidth: PLAYER_BODY_ISO_WIDTH,
-        isoHeight: PLAYER_BODY_ISO_HEIGHT,
-        colors: player.bodyColor,
-        sortY: playerSortY + 0.0032
+        // Basic frustum culling for warriors too
+        if (warriorScreenPos.x + TILE_ISO_WIDTH > 0 && warriorScreenPos.x < canvas.width &&
+            warriorScreenPos.y + CHARACTER_BODY_Z_HEIGHT + CHARACTER_LEG_Z_HEIGHT > 0 && warriorScreenPos.y < canvas.height + TILE_ISO_HEIGHT) {
+            drawCharacter(warrior, warriorScreenPos, warriorSortY);
+        }
     });
 
 
-    // Sort drawables by their sortY (bottom-most visible point on screen)
+    // Sort drawables by their sortY
     drawables.sort((a, b) => {
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
+        // Consistent drawing order for different types if sortY is the same
+        const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'characterPart': 2, 'treeLeaves': 3 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
 
@@ -448,19 +661,31 @@ function draw() {
     drawables.forEach(entity => {
         if (entity.type === 'groundPatch') {
             drawIsometricDiamond(entity.colors, entity.screenX, entity.screenY, entity.isoWidth, entity.isoHeight, DRAW_GROUND_BORDERS, GROUND_BORDER_COLOR, GROUND_BORDER_THICKNESS);
-        } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'playerLeg' || entity.type === 'playerBody') {
+        } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'characterPart') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         }
     });
 
-    // --- Draw Version Number (always visible in top-left) ---
+    // --- Draw UI Elements (Health, Version) ---
+    // Player Health Bar
+    ctx.fillStyle = 'black';
+    ctx.fillRect(10, 50, 150, 20); // Background for health bar
+    const healthBarWidth = (player.health / player.maxHealth) * 148;
+    ctx.fillStyle = 'red';
+    ctx.fillRect(11, 51, healthBarWidth, 18);
+    ctx.font = '16px Arial';
+    ctx.fillStyle = 'white';
+    ctx.fillText(`HP: ${player.health}/${player.maxHealth}`, 170, 66);
+
+
+    // Version Number
     ctx.font = '24px Arial';
     ctx.fillStyle = 'white';
-    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30); // Fixed position on canvas
+    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
 }
 
 // --- Game Loop ---
-function gameLoop() {
+function gameLoop(currentTime) {
     let currentDx = 0;
     let currentDy = 0;
 
@@ -483,46 +708,13 @@ function gameLoop() {
         currentDy *= diagonalFactor;
     }
 
-    // Calculate potential new player position
     let potentialNewPlayerX = player.x + currentDx * player.moveSpeed;
     let potentialNewPlayerY = player.y + currentDy * player.moveSpeed;
 
-    // --- Collision Detection Logic ---
-    let collision = false;
-
-    // Check world boundaries
-    if (potentialNewPlayerX < 0 || potentialNewPlayerX >= WORLD_UNITS_WIDTH ||
-        potentialNewPlayerY < 0 || potentialNewPlayerY >= WORLD_UNITS_HEIGHT) {
-        collision = true;
-    } else {
-        // Get the grid coordinates of the potential new position
-        const gridX = Math.floor(potentialNewPlayerX);
-        const gridY = Math.floor(potentialNewPlayerY);
-
-        // Check for collision with biomes (lake)
-        if (worldMap[gridY] && worldMap[gridY][gridX]) {
-            const biomeTypeAtNewPos = worldMap[gridY][gridX];
-            if (biomeTypeAtNewPos === 'lake' || biomeTypeAtNewPos === 'mountain') { // Now mountains are also unwalkable
-                collision = true; // Cannot walk on lake or mountain
-            } else if (biomeTypeAtNewPos === 'forest') {
-                // Check if there's a specific tree at this forest tile
-                const treePresent = trees.some(tree => 
-                    Math.floor(tree.x) === gridX && 
-                    Math.floor(tree.y) === gridY
-                );
-                if (treePresent) {
-                    collision = true; // Cannot walk through a tree
-                }
-            }
-        }
-    }
-
-    // Only update player position if no collision
-    if (!collision) {
+    if (isWalkable(potentialNewPlayerX, potentialNewPlayerY)) {
         player.x = potentialNewPlayerX;
         player.y = potentialNewPlayerY;
     }
-
 
     player.isMoving = (currentDx !== 0 || currentDy !== 0);
 
@@ -539,6 +731,15 @@ function gameLoop() {
     // --- Camera Follow Logic (snaps to player's exact position) ---
     camera.x = player.x;
     camera.y = player.y;
+
+    // --- Warrior Spawning Logic ---
+    if (currentTime - lastWarriorSpawnTime > WARRIOR_SPAWN_INTERVAL) {
+        spawnWarrior();
+        lastWarriorSpawnTime = currentTime;
+    }
+
+    // --- Update Warrior Logic ---
+    updateWarriors(); // Handle warrior movement and AI
 
     draw();
 

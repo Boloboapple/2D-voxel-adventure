@@ -35,7 +35,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 20; // <--- INCREMENTED TO 20 for refined sorting and lake
+const GAME_VERSION = 21; // <--- INCREMENTED TO 21 for re-adding the lake
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -197,7 +197,7 @@ function setupWorld() {
 }
 
 
-// --- Main Drawing Function (Modified for Biome Patches and Sorting) ---
+// --- Main Drawing Function ---
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -216,6 +216,8 @@ function draw() {
             let isWater = false;
 
             // Determine biome color for this conceptual unit square
+            // Iterate over biomes in a specific order (e.g., smaller/overlaying biomes last)
+            // For now, order added to worldBiomes determines draw order (last one wins if overlapping)
             for (const biome of worldBiomes) {
                 if (x >= biome.x && x < biome.x + biome.width &&
                     y >= biome.y && y < biome.y + biome.height) {
@@ -223,7 +225,9 @@ function draw() {
                     if (biome.type === 'lake') {
                         isWater = true;
                     }
-                    break;
+                    // Do NOT break here. Allow subsequent biomes to potentially override.
+                    // This is important if biomes overlap and you want a specific one to take precedence.
+                    // For distinct rectangular biomes, it doesn't matter as much.
                 }
             }
 
@@ -236,7 +240,6 @@ function draw() {
                 isoHeight: TILE_ISO_HEIGHT,
                 colors: tileColors,
                 isWater: isWater,
-                // Sort by the bottom-most point of the diamond
                 sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // Ground patches are the base layer
             });
         }
@@ -259,7 +262,6 @@ function draw() {
         const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
 
         // Calculate the deepest visual point of the tree for sorting.
-        // This is the bottom-most point of the trunk's right or left face.
         const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT; // Y coord of the ground point + its height
         
         drawables.push({
@@ -280,8 +282,8 @@ function draw() {
             screenX: treeScreenPos.x + (TILE_ISO_WIDTH / 2) - (TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE / 2),
             screenY: leavesTopScreenY,
             zHeight: LEAVES_Z_HEIGHT,
-            isoWidth: LEAVES_ISO_WIDTH_SCALE * TILE_ISO_WIDTH, // Use TILE_ISO_WIDTH for scaling
-            isoHeight: LEAVES_ISO_HEIGHT_SCALE * TILE_ISO_HEIGHT, // Use TILE_ISO_HEIGHT for scaling
+            isoWidth: LEAVES_ISO_WIDTH_SCALE * TILE_ISO_WIDTH,
+            isoHeight: LEAVES_ISO_HEIGHT_SCALE * TILE_ISO_HEIGHT,
             colors: TREE_LEAVES_COLOR,
             sortY: treeBaseScreenY + 0.002 // Leaves are higher than trunks
         });
@@ -302,8 +304,6 @@ function draw() {
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
 
-    // Calculate player's effective "ground" Y for sorting
-    // This is the player's ground-level screen Y + its height (PLAYER_LEG_Z_HEIGHT + PLAYER_BODY_Z_HEIGHT)
     const playerSortY = playerScreenPos.y + TILE_ISO_HEIGHT + PLAYER_LEG_Z_HEIGHT + PLAYER_BODY_Z_HEIGHT;
 
     drawables.push({
@@ -315,7 +315,7 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        sortY: playerSortY + 0.003 // Player legs are at a similar depth to body
+        sortY: playerSortY + 0.003
     });
 
     drawables.push({
@@ -327,7 +327,7 @@ function draw() {
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        sortY: playerSortY + 0.0031 // Slight offset for sorting between legs
+        sortY: playerSortY + 0.0031
     });
 
     drawables.push({
@@ -339,22 +339,15 @@ function draw() {
         isoWidth: PLAYER_BODY_ISO_WIDTH,
         isoHeight: PLAYER_BODY_ISO_HEIGHT,
         colors: player.bodyColor,
-        sortY: playerSortY + 0.0032 // Player body is slightly "higher" in screen Y but should sort with other player parts
+        sortY: playerSortY + 0.0032
     });
 
 
     // Sort drawables by their sortY (bottom-most visible point on screen)
-    // Objects with a lower sortY value are drawn first (further away/below).
     drawables.sort((a, b) => {
-        // Primary sort: by the calculated sortY
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-
-        // Secondary sort: for items with identical sortY (e.g., within the same "slice")
-        // This is a tie-breaker. You can define specific drawing orders for types if needed.
-        // For example, if two objects have the exact same sortY, which one draws on top?
-        // This is where explicit drawing order (e.g., ground first, then trunks, then player, then leaves) helps.
         const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
@@ -371,20 +364,19 @@ function draw() {
 
 // --- Game Loop ---
 function gameLoop() {
-    // 1. Handle Player Movement (Free Movement)
     let currentDx = 0;
     let currentDy = 0;
 
-    if (keysPressed['w']) { // Move Up-Left (isometric N/W)
+    if (keysPressed['w']) {
         currentDy -= 1;
     }
-    if (keysPressed['s']) { // Move Down-Right (isometric S/E)
+    if (keysPressed['s']) {
         currentDy += 1;
     }
-    if (keysPressed['a']) { // Move Down-Left (isometric S/W)
+    if (keysPressed['a']) {
         currentDx -= 1;
     }
-    if (keysPressed['d']) { // Move Up-Right (isometric N/E)
+    if (keysPressed['d']) {
         currentDx += 1;
     }
 
@@ -397,20 +389,14 @@ function gameLoop() {
     const potentialNewX = player.x + currentDx * player.moveSpeed;
     const potentialNewY = player.y + currentDy * player.moveSpeed;
 
-    // --- Basic World Boundary Collision ---
     const playerUnitWidth = PLAYER_BODY_ISO_WIDTH / TILE_ISO_WIDTH;
     const playerUnitHeight = PLAYER_BODY_ISO_HEIGHT / TILE_ISO_HEIGHT;
 
     player.x = Math.max(playerUnitWidth / 2, Math.min(WORLD_UNITS_WIDTH - playerUnitWidth / 2, potentialNewX));
     player.y = Math.max(playerUnitHeight / 2, Math.min(WORLD_UNITS_HEIGHT - playerUnitHeight / 2, potentialNewY));
 
-    // For collision with biomes (water/trees), we'll add this logic later.
-    // For now, the player can pass through everything.
-
-    // Update isMoving flag and animation
     player.isMoving = (currentDx !== 0 || currentDy !== 0);
 
-    // Animation update
     if (player.isMoving) {
         player.frameCount++;
         if (player.frameCount % player.animationSpeed === 0) {
@@ -421,7 +407,7 @@ function gameLoop() {
         player.animationFrame = 0;
     }
 
-    draw(); // Always redraw the entire scene
+    draw();
 
     requestAnimationFrame(gameLoop);
 }
@@ -438,12 +424,10 @@ document.addEventListener('keyup', (event) => {
 
 
 // --- Initial Setup ---
-setupWorld(); // Call the new world setup function
-// Start the game loop
+setupWorld();
 requestAnimationFrame(gameLoop);
 
 
-// Optional: Add a button to generate a new map (now resets trees and player)
 const regenerateButton = document.createElement('button');
 regenerateButton.textContent = 'Generate New Map';
 regenerateButton.style.marginTop = '20px';
@@ -457,7 +441,7 @@ regenerateButton.style.cursor = 'pointer';
 document.body.appendChild(regenerateButton);
 
 regenerateButton.addEventListener('click', () => {
-    setupWorld(); // Reset trees and player position
+    setupWorld();
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;

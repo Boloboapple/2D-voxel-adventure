@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 28; // <--- INCREMENTED TO 28 for enemy warriors (spawning, idle, chasing, basic hitbox, health)
+const GAME_VERSION = 29; // <--- INCREMENTED TO 29 for debugging warrior spawning/visibility
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -64,7 +64,8 @@ const player = {
     animationSpeed: 5,
     frameCount: 0,
     health: 100, // Player health
-    maxHealth: 100
+    maxHealth: 100,
+    aggroRange: 0 // Player doesn't "aggro" things, but useful for debugging
 };
 
 // Define character dimensions relative to tile size
@@ -86,9 +87,11 @@ const camera = {
 
 // --- Enemy Warrior Configuration ---
 const warriors = [];
-const WARRIOR_SPAWN_INTERVAL = 30 * 1000; // 30 seconds in milliseconds
+// TEMPORARY: Faster spawn for debugging!
+const WARRIOR_SPAWN_INTERVAL = 5 * 1000; // 5 seconds in milliseconds (was 30)
 let lastWarriorSpawnTime = 0;
-const MAX_WARRIORS = 10; // Cap the number of warriors
+// TEMPORARY: More warriors for debugging!
+const MAX_WARRIORS = 15; // Increased max warriors (was 10)
 
 const WARRIOR_AGGRO_RANGE = 5; // Distance in world units for player detection
 const WARRIOR_MOVE_SPEED = 0.03; // Warriors move slightly slower than player
@@ -359,6 +362,12 @@ function isWalkable(x, y) {
     }
     const gridX = Math.floor(x);
     const gridY = Math.floor(y);
+
+    if (!worldMap[gridY] || !worldMap[gridY][gridX]) {
+        // This case should ideally not happen if bounds check passed, but good for safety
+        return false;
+    }
+
     const biomeType = worldMap[gridY][gridX];
 
     if (biomeType === 'lake' || biomeType === 'mountain') {
@@ -379,44 +388,55 @@ function isWalkable(x, y) {
 
 // --- Warrior Logic ---
 function spawnWarrior() {
-    if (warriors.length >= MAX_WARRIORS) return;
+    if (warriors.length >= MAX_WARRIORS) {
+        console.log(`Max warriors (${MAX_WARRIORS}) reached. Not spawning.`);
+        return;
+    }
 
     let spawnX, spawnY;
     let attempts = 0;
     const maxAttempts = 100;
+    let foundValidSpot = false;
 
     // Try to find a spawn location that is 'ground' and not too close to the player
-    do {
-        spawnX = Math.floor(Math.random() * WORLD_UNITS_WIDTH);
-        spawnY = Math.floor(Math.random() * WORLD_UNITS_HEIGHT);
-        attempts++;
-    } while ((!isWalkable(spawnX, spawnY) ||
-              Math.sqrt(Math.pow(spawnX - player.x, 2) + Math.pow(spawnY - player.y, 2)) < WARRIOR_AGGRO_RANGE * 2) && // Spawn further away
-             attempts < maxAttempts);
+    while (attempts < maxAttempts && !foundValidSpot) {
+        spawnX = Math.random() * WORLD_UNITS_WIDTH;
+        spawnY = Math.random() * WORLD_UNITS_HEIGHT;
 
-    if (attempts >= maxAttempts) {
-        console.warn("Could not find suitable spawn location for warrior.");
+        const gridX = Math.floor(spawnX);
+        const gridY = Math.floor(spawnY);
+
+        // Check if walkable AND far enough from player
+        if (isWalkable(gridX, gridY) &&
+            Math.sqrt(Math.pow(spawnX - player.x, 2) + Math.pow(spawnY - player.y, 2)) > WARRIOR_AGGRO_RANGE * 2) {
+            foundValidSpot = true;
+        }
+        attempts++;
+    }
+
+    if (!foundValidSpot) {
+        console.warn(`Could not find suitable spawn location for warrior after ${maxAttempts} attempts.`);
         return;
     }
 
     warriors.push({
-        x: spawnX + 0.5, // Center on tile
-        y: spawnY + 0.5,
+        x: spawnX,
+        y: spawnY,
         bodyColor: WARRIOR_BODY_COLOR,
         legColor: WARRIOR_LEG_COLOR,
         isMoving: false,
         animationFrame: 0,
-        animationSpeed: 10, // Slower animation than player
+        animationSpeed: 10,
         frameCount: 0,
         health: WARRIOR_HEALTH,
         maxHealth: WARRIOR_HEALTH,
         state: WARRIOR_STATE.IDLE,
-        targetX: null, // For idle movement
+        targetX: null,
         targetY: null,
         aggroRange: WARRIOR_AGGRO_RANGE,
-        attackRange: 0.8 // Warrior must be close to attack
+        attackRange: 0.8
     });
-    console.log(`Warrior spawned at (${spawnX}, ${spawnY}). Total warriors: ${warriors.length}`);
+    console.log(`Warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}). Total warriors: ${warriors.length}`);
 }
 
 function updateWarriors() {
@@ -426,10 +446,10 @@ function updateWarriors() {
         // State Transition: IDLE to CHASING
         if (warrior.state === WARRIOR_STATE.IDLE && distToPlayer <= warrior.aggroRange) {
             warrior.state = WARRIOR_STATE.CHASING;
-            console.log(`Warrior ${index} is now CHASING player.`);
+            console.log(`Warrior ${index} at (${warrior.x.toFixed(2)}, ${warrior.y.toFixed(2)}) is now CHASING player.`);
         }
         // State Transition: CHASING to IDLE (if player gets too far)
-        else if (warrior.state === WARRIOR_STATE.CHASING && distToPlayer > warrior.aggroRange * 1.5) { // Needs a larger 'drop aggro' range
+        else if (warrior.state === WARRIOR_STATE.CHASING && distToPlayer > warrior.aggroRange * 1.5) {
             warrior.state = WARRIOR_STATE.IDLE;
             console.log(`Warrior ${index} is now IDLE (player too far).`);
             warrior.targetX = null;
@@ -439,51 +459,55 @@ function updateWarriors() {
         // Behavior based on state
         if (warrior.state === WARRIOR_STATE.CHASING) {
             warrior.isMoving = true;
-            // Move towards the player
             let dx = player.x - warrior.x;
             let dy = player.y - warrior.y;
             const magnitude = Math.sqrt(dx * dx + dy * dy);
 
-            if (magnitude > warrior.attackRange) { // Only move if not in attack range
-                dx /= magnitude; // Normalize
+            if (magnitude > warrior.attackRange) {
+                dx /= magnitude;
                 dy /= magnitude;
 
                 let potentialNewX = warrior.x + dx * WARRIOR_MOVE_SPEED;
                 let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
 
-                // Simple collision for warriors (only check walkability)
+                // Improved collision for warriors: check next tile
+                const nextGridX = Math.floor(potentialNewX);
+                const nextGridY = Math.floor(potentialNewY);
+
                 if (isWalkable(potentialNewX, potentialNewY)) {
                     warrior.x = potentialNewX;
                     warrior.y = potentialNewY;
                 } else {
-                    // Try to move around obstacle (basic)
+                    // Try horizontal or vertical movement if diagonal is blocked
                     if (isWalkable(warrior.x + dx * WARRIOR_MOVE_SPEED, warrior.y)) {
                         warrior.x += dx * WARRIOR_MOVE_SPEED;
                     } else if (isWalkable(warrior.x, warrior.y + dy * WARRIOR_MOVE_SPEED)) {
                         warrior.y += dy * WARRIOR_MOVE_SPEED;
                     }
-                    // Could add more sophisticated pathfinding here
+                    // If still stuck, stop moving
+                    else {
+                         warrior.isMoving = false;
+                    }
                 }
             } else {
-                // If in attack range, stop moving and prepare to attack (next phase)
                 warrior.isMoving = false;
-                // Transition to attacking state here in next phase
+                // Attack logic goes here in the next phase
             }
         } else if (warrior.state === WARRIOR_STATE.IDLE) {
-            // Idle movement: occasionally pick a random nearby tile and move to it
             if (!warrior.isMoving && Math.random() < WARRIOR_IDLE_MOVE_CHANCE) {
                 let foundTarget = false;
                 let attempts = 0;
                 const maxIdleAttempts = 5;
                 while (!foundTarget && attempts < maxIdleAttempts) {
-                    const randomOffsetMagnitude = Math.random() * 3 + 1; // Move 1-4 units
+                    const randomOffsetMagnitude = Math.random() * 3 + 1;
                     const randomAngle = Math.random() * Math.PI * 2;
-                    const targetCandidateX = Math.floor(warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude);
-                    const targetCandidateY = Math.floor(warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude);
+                    const targetCandidateX = warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude; // Don't floor yet, keep float for target
+                    const targetCandidateY = warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude;
 
-                    if (isWalkable(targetCandidateX, targetCandidateY)) {
-                        warrior.targetX = targetCandidateX + 0.5;
-                        warrior.targetY = targetCandidateY + 0.5;
+                    // Check if the destination tile is walkable
+                    if (isWalkable(Math.floor(targetCandidateX), Math.floor(targetCandidateY))) {
+                        warrior.targetX = targetCandidateX;
+                        warrior.targetY = targetCandidateY;
                         warrior.isMoving = true;
                         foundTarget = true;
                     }
@@ -496,7 +520,7 @@ function updateWarriors() {
                 let dy = warrior.targetY - warrior.y;
                 const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
 
-                if (distanceToTarget < WARRIOR_MOVE_SPEED) { // Reached target
+                if (distanceToTarget < WARRIOR_MOVE_SPEED) {
                     warrior.x = warrior.targetX;
                     warrior.y = warrior.targetY;
                     warrior.isMoving = false;
@@ -513,7 +537,6 @@ function updateWarriors() {
                         warrior.x = potentialNewX;
                         warrior.y = potentialNewY;
                     } else {
-                        // Stop if blocked
                         warrior.isMoving = false;
                         warrior.targetX = null;
                         warrior.targetY = null;
@@ -543,7 +566,7 @@ function updateWarriors() {
 
 
 // --- Main Drawing Function ---
-let drawables = []; // Make this global or pass it around if needed by other functions
+let drawables = []; // This needs to be accessible in this scope for drawCharacter
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -643,6 +666,31 @@ function draw() {
         if (warriorScreenPos.x + TILE_ISO_WIDTH > 0 && warriorScreenPos.x < canvas.width &&
             warriorScreenPos.y + CHARACTER_BODY_Z_HEIGHT + CHARACTER_LEG_Z_HEIGHT > 0 && warriorScreenPos.y < canvas.height + TILE_ISO_HEIGHT) {
             drawCharacter(warrior, warriorScreenPos, warriorSortY);
+
+            // --- DEBUGGING VISUALS FOR WARRIORS ---
+            // Draw aggro range
+            ctx.strokeStyle = warrior.state === WARRIOR_STATE.CHASING ? 'red' : 'rgba(255, 165, 0, 0.5)'; // Orange if idle, red if chasing
+            ctx.beginPath();
+            // Convert world aggro range to screen pixels (approximate, for visual only)
+            const aggroRangeScreen = warrior.aggroRange * (TILE_ISO_WIDTH / 2) * 1.5; // Scale it visually
+            ctx.arc(warriorScreenPos.x + TILE_ISO_WIDTH / 2, warriorScreenPos.y + TILE_ISO_HEIGHT / 2, aggroRangeScreen, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw warrior's exact world (x,y) point
+            ctx.fillStyle = 'purple';
+            ctx.fillRect(warriorScreenPos.x + TILE_ISO_WIDTH / 2 - 2, warriorScreenPos.y + TILE_ISO_HEIGHT / 2 - 2, 4, 4);
+
+            // Draw warrior target if they are moving idly
+            if (warrior.state === WARRIOR_STATE.IDLE && warrior.targetX !== null && warrior.targetY !== null) {
+                const targetScreenPos = isoToScreen(warrior.targetX, warrior.targetY);
+                ctx.strokeStyle = 'cyan';
+                ctx.beginPath();
+                ctx.moveTo(warriorScreenPos.x + TILE_ISO_WIDTH / 2, warriorScreenPos.y + TILE_ISO_HEIGHT / 2);
+                ctx.lineTo(targetScreenPos.x + TILE_ISO_WIDTH / 2, targetScreenPos.y + TILE_ISO_HEIGHT / 2);
+                ctx.stroke();
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(targetScreenPos.x + TILE_ISO_WIDTH / 2 - 3, targetScreenPos.y + TILE_ISO_HEIGHT / 2 - 3, 6, 6);
+            }
         }
     });
 
@@ -652,7 +700,6 @@ function draw() {
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
-        // Consistent drawing order for different types if sortY is the same
         const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'characterPart': 2, 'treeLeaves': 3 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
@@ -739,7 +786,7 @@ function gameLoop(currentTime) {
     }
 
     // --- Update Warrior Logic ---
-    updateWarriors(); // Handle warrior movement and AI
+    updateWarriors();
 
     draw();
 

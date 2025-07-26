@@ -14,9 +14,6 @@ const WORLD_UNITS_HEIGHT = 15;
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3;
 
 // Calculate required canvas dimensions based on the new world size
-// These calculations now determine the actual visual size of the isometric projection
-// The width of the entire isometric projection is (WORLD_UNITS_WIDTH + WORLD_UNITS_HEIGHT) * (TILE_ISO_WIDTH / 2)
-// The height of the entire isometric projection (if flat) is (WORLD_UNITS_WIDTH + WORLD_UNITS_HEIGHT) * (TILE_ISO_HEIGHT / 2)
 const totalIsoProjectionWidth = (WORLD_UNITS_WIDTH + WORLD_UNITS_HEIGHT) * (TILE_ISO_WIDTH / 2);
 const totalIsoProjectionHeight = (WORLD_UNITS_WIDTH + WORLD_UNITS_HEIGHT) * (TILE_ISO_HEIGHT / 2);
 
@@ -28,10 +25,6 @@ canvas.width = totalIsoProjectionWidth + paddingX;
 canvas.height = totalIsoProjectionHeight + paddingY + MAX_OBJECT_HEIGHT_FROM_GROUND;
 
 // --- Global Offset for the Isometric Drawing ---
-// This offset ensures the entire isometric diamond is visible and roughly centered.
-// The (0,0) point in world units will appear at this screenX, screenY
-// We need to shift it right by the "height" of the map in X-direction to keep the diamond centered
-// and down by the max object height for tops of trees to be visible.
 const globalDrawOffsetX = (WORLD_UNITS_HEIGHT * TILE_ISO_WIDTH / 2) + (paddingX / 2);
 const globalDrawOffsetY = MAX_OBJECT_HEIGHT_FROM_GROUND + (paddingY / 2);
 
@@ -42,7 +35,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 18; // <--- INCREMENTED TO 18 for correct ground positioning and basic biomes
+const GAME_VERSION = 19; // <--- INCREMENTED TO 19 for correct biome rendering
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -50,7 +43,7 @@ console.log("------------------------------------------");
 // --- Colors for the single ground plane and biomes ---
 const GROUND_COLORS = { top: '#66BB6A', left: '#4CAF50', right: '#388E3C' }; // Plains green
 const LAKE_COLORS = { top: '#64B5F6', left: '#2196F3', right: '#1976D2' }; // Blue for lake water
-const FOREST_COLORS = { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' }; // Darker green for forest ground
+const FOREST_GROUND_COLORS = { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' }; // Darker green for forest ground
 
 const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; // Brown for tree trunk
 const TREE_LEAVES_COLOR = { top: '#7CB342', left: '#689F38', right: '#558B2F' }; // Green for tree leaves
@@ -80,15 +73,13 @@ const PLAYER_LEG_ISO_HEIGHT = TILE_ISO_HEIGHT * 0.2;
 const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 
 // --- World Biomes (new structure) ---
-// Each biome will be an object defining its type and its rectangular bounds in WORLD_UNITS
 const worldBiomes = [];
-const trees = []; // Trees will be placed within forest biomes
+const trees = [];
 
 // --- Keyboard Input State ---
 const keysPressed = {};
 
 // --- Coordinate Conversion Function (World Unit to Isometric Screen) ---
-// Returns the screen coordinates of the TOP-MIDDLE point of the isometric "unit"
 function isoToScreen(x, y) {
     const screenX = (x - y) * (TILE_ISO_WIDTH / 2) + globalDrawOffsetX;
     const screenY = (x + y) * (TILE_ISO_HEIGHT / 2) + globalDrawOffsetY;
@@ -97,7 +88,7 @@ function isoToScreen(x, y) {
 
 // --- Drawing Helper Functions ---
 
-// Draws an isometric diamond (like a flat ground plane)
+// Draws an isometric diamond (like a flat ground plane or a biome patch)
 // screenX_top_middle, screenY_top_middle are the canvas coordinates of the top-middle vertex of the diamond
 // isoWidth and isoHeight define the dimensions of this specific diamond
 function drawIsometricDiamond(colorSet, screenX_top_middle, screenY_top_middle, isoWidth, isoHeight) {
@@ -157,40 +148,40 @@ function setupWorld() {
     worldBiomes.length = 0; // Clear previous biomes
     trees.length = 0; // Clear previous trees
 
-    // Define the main ground plane biome
+    // Define the main ground plane biome (covers the entire world)
     worldBiomes.push({
         type: 'ground',
-        x: 0, y: 0, // Start at world unit (0,0)
+        x: 0, y: 0,
         width: WORLD_UNITS_WIDTH,
         height: WORLD_UNITS_HEIGHT,
         colors: GROUND_COLORS
     });
 
-    // Add a simplified Lake biome (rectangular for now)
+    // Add a Lake biome (rectangular for now)
     worldBiomes.push({
         type: 'lake',
-        x: 12, y: 3, // Start coordinates in world units
-        width: 6, height: 4, // Dimensions in world units
+        x: 12, y: 3,
+        width: 6, height: 4,
         colors: LAKE_COLORS
     });
 
-    // Add a simplified Forest biome (rectangular for now)
+    // Add a Forest biome (rectangular for now)
     worldBiomes.push({
         type: 'forest',
-        x: 2, y: 8, // Start coordinates in world units
-        width: 8, height: 6, // Dimensions in world units
-        colors: FOREST_COLORS
+        x: 2, y: 8,
+        width: 8, height: 6,
+        colors: FOREST_GROUND_COLORS // Use forest ground colors for the biome patch
     });
 
-    // Place trees within the forest biome (simple random placement for now)
-    // We'll iterate over the forest biome's bounds
+    // Place trees within the forest biome
     const forestBiome = worldBiomes.find(b => b.type === 'forest');
     if (forestBiome) {
-        const treeDensity = 0.4;
+        const treeDensity = 0.4; // 40% chance to place a tree in a unit square
         for (let y = forestBiome.y; y < forestBiome.y + forestBiome.height; y++) {
             for (let x = forestBiome.x; x < forestBiome.x + forestBiome.width; x++) {
                 if (Math.random() < treeDensity) {
-                    trees.push({ x: x + Math.random(), y: y + Math.random() }); // Add slight random offset for natural look
+                    // Add slight random offset within the unit square for natural look
+                    trees.push({ x: x + Math.random(), y: y + Math.random() });
                 }
             }
         }
@@ -205,43 +196,54 @@ function setupWorld() {
 }
 
 
-// --- Main Drawing Function (Modified for Single Ground Plane and Biomes) ---
+// --- Main Drawing Function (Modified for Biome Patches) ---
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw the version number on the canvas for easy verification
     ctx.font = '24px Arial';
     ctx.fillStyle = 'white';
     ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
 
-    // Array to hold all drawable entities
     const drawables = [];
 
-    // --- Add Biomes to drawables ---
-    // Biomes are drawn as large isometric diamonds, similar to the main ground
-    worldBiomes.forEach(biome => {
-        const biomeScreenPos = isoToScreen(biome.x, biome.y); // Top-middle point of this biome's diamond
+    // --- Add Ground Patches for Biomes ---
+    // Iterate over the "conceptual cells" of the entire world area
+    // This allows us to draw each "unit square" of the world as a small diamond.
+    // We determine the color of each unit square based on what biome it falls into.
+    for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
+        for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
+            const screenPos = isoToScreen(x, y); // Top-middle point for this conceptual unit square
 
-        // Calculate the isoWidth and isoHeight for this biome's rectangle
-        // The isometric projection of a rectangle (x,y,width,height) in world units
-        // has a width of (width + height) * TILE_ISO_WIDTH / 2
-        // and a height of (width + height) * TILE_ISO_HEIGHT / 2
-        const biomeIsoWidth = (biome.width + biome.height) * (TILE_ISO_WIDTH / 2);
-        const biomeIsoHeight = (biome.width + biome.height) * (TILE_ISO_HEIGHT / 2);
+            let tileColors = GROUND_COLORS; // Default to plains ground
+            let isWater = false; // Flag for collision/interaction later
 
-        drawables.push({
-            type: 'biome',
-            biomeType: biome.type, // Store biome type for later use if needed
-            screenX: biomeScreenPos.x,
-            screenY: biomeScreenPos.y,
-            isoWidth: biomeIsoWidth,
-            isoHeight: biomeIsoHeight,
-            colors: biome.colors,
-            // Sort biomes based on their starting Y-coordinate + total height
-            // Ground (base) should draw first, then other biomes on top
-            sortY: biomeScreenPos.y + biomeIsoHeight + (biome.type === 'ground' ? 0.0 : 0.001) // Ground is layer 0, others layer 0.001
-        });
-    });
+            // Determine biome color for this conceptual unit square
+            for (const biome of worldBiomes) {
+                // Check if this (x,y) unit falls within the current biome's rectangular bounds
+                if (x >= biome.x && x < biome.x + biome.width &&
+                    y >= biome.y && y < biome.y + biome.height) {
+                    tileColors = biome.colors;
+                    if (biome.type === 'lake') {
+                        isWater = true;
+                    }
+                    // Break after finding the first matching biome (order matters if biomes overlap)
+                    break;
+                }
+            }
+
+            drawables.push({
+                type: 'groundPatch', // New type for conceptual ground unit
+                x: x, y: y, // Store its conceptual unit coordinates
+                screenX: screenPos.x,
+                screenY: screenPos.y,
+                isoWidth: TILE_ISO_WIDTH, // Each patch is one tile unit size
+                isoHeight: TILE_ISO_HEIGHT,
+                colors: tileColors,
+                isWater: isWater, // Store water status
+                sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // All ground patches are lowest layer
+            });
+        }
+    }
 
 
     // --- Add Trees to drawables ---
@@ -256,12 +258,9 @@ function draw() {
         const LEAVES_ISO_WIDTH_SCALE = 1.4;
         const LEAVES_ISO_HEIGHT_SCALE = 1.4;
 
-        // Trunk's top diamond's top-middle point (relative to tree's ground point)
         const trunkTopScreenY = treeScreenPos.y - TRUNK_Z_HEIGHT + (TILE_ISO_HEIGHT / 2);
-        // Leaves' top diamond's top-middle point (relative to trunk's top)
         const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
 
-        // Add trunk
         drawables.push({
             type: 'treeTrunk',
             x: tree.x, y: tree.y,
@@ -271,10 +270,9 @@ function draw() {
             isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
             isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
             colors: TREE_TRUNK_COLOR,
-            sortY: treeScreenPos.y + TILE_ISO_HEIGHT + 0.1 // Trees draw above ground/biomes
+            sortY: treeScreenPos.y + TILE_ISO_HEIGHT + 0.1 // Trees draw above ground patches
         });
 
-        // Add leaves
         drawables.push({
             type: 'treeLeaves',
             x: tree.x, y: tree.y,
@@ -305,7 +303,6 @@ function draw() {
 
     const playerBaseScreenYForSort = playerScreenPos.y + TILE_ISO_HEIGHT;
 
-    // Player Leg A
     drawables.push({
         type: 'playerLeg',
         x: player.x, y: player.y,
@@ -318,7 +315,6 @@ function draw() {
         sortY: playerBaseScreenYForSort + 0.2 // Player parts draw above trees (trunks)
     });
 
-    // Player Leg B
     drawables.push({
         type: 'playerLeg',
         x: player.x, y: player.y,
@@ -331,7 +327,6 @@ function draw() {
         sortY: playerBaseScreenYForSort + 0.2001
     });
 
-    // Player Body
     drawables.push({
         type: 'playerBody',
         x: player.x, y: player.y,
@@ -352,15 +347,15 @@ function draw() {
             return a.sortY - b.sortY;
         }
         // Secondary sort for exact same sortY values (e.g., player parts)
-        // Order: Biome (0) -> TreeTrunk (1) -> PlayerLeg (2) -> PlayerBody (3) -> TreeLeaves (4)
-        const typeOrder = { 'biome': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
+        // Order: GroundPatch (0) -> TreeTrunk (1) -> PlayerLeg (2) -> PlayerBody (3) -> TreeLeaves (4)
+        const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
 
     // Draw all sorted entities
     drawables.forEach(entity => {
-        if (entity.type === 'biome') {
-            // Biomes are drawn as isometric diamonds with their specific dimensions
+        if (entity.type === 'groundPatch') {
+            // Each ground patch is drawn as a TILE_ISO_WIDTH/HEIGHT diamond
             drawIsometricDiamond(entity.colors, entity.screenX, entity.screenY, entity.isoWidth, entity.isoHeight);
         } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'playerLeg' || entity.type === 'playerBody') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
@@ -396,14 +391,15 @@ function gameLoop() {
     const potentialNewX = player.x + currentDx * player.moveSpeed;
     const potentialNewY = player.y + currentDy * player.moveSpeed;
 
-    // --- Basic World Boundary Collision (still simplified for now) ---
-    // Player will now be contained within the conceptual WORLD_UNITS boundaries.
-    // Collision margins based on player block size relative to a 'unit'
+    // --- Basic World Boundary Collision ---
     const playerUnitWidth = PLAYER_BODY_ISO_WIDTH / TILE_ISO_WIDTH;
     const playerUnitHeight = PLAYER_BODY_ISO_HEIGHT / TILE_ISO_HEIGHT;
 
     player.x = Math.max(playerUnitWidth / 2, Math.min(WORLD_UNITS_WIDTH - playerUnitWidth / 2, potentialNewX));
     player.y = Math.max(playerUnitHeight / 2, Math.min(WORLD_UNITS_HEIGHT - playerUnitHeight / 2, potentialNewY));
+
+    // For collision with biomes (water/trees), we'll add this logic later.
+    // For now, the player can pass through everything.
 
     // Update isMoving flag and animation
     player.isMoving = (currentDx !== 0 || currentDy !== 0);

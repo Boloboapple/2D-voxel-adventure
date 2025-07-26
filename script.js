@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 29; // <--- INCREMENTED TO 29 for debugging warrior spawning/visibility
+const GAME_VERSION = 30; // <--- INCREMENTED TO 30 for additional spawning debug logs
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -388,6 +388,8 @@ function isWalkable(x, y) {
 
 // --- Warrior Logic ---
 function spawnWarrior() {
+    console.log(`spawnWarrior() called. Current warriors: ${warriors.length}, Max warriors: ${MAX_WARRIORS}`);
+
     if (warriors.length >= MAX_WARRIORS) {
         console.log(`Max warriors (${MAX_WARRIORS}) reached. Not spawning.`);
         return;
@@ -406,16 +408,22 @@ function spawnWarrior() {
         const gridX = Math.floor(spawnX);
         const gridY = Math.floor(spawnY);
 
-        // Check if walkable AND far enough from player
-        if (isWalkable(gridX, gridY) &&
-            Math.sqrt(Math.pow(spawnX - player.x, 2) + Math.pow(spawnY - player.y, 2)) > WARRIOR_AGGRO_RANGE * 2) {
+        // Debugging the isWalkable check
+        const walkableResult = isWalkable(gridX, gridY);
+        const distanceToPlayer = Math.sqrt(Math.pow(spawnX - player.x, 2) + Math.pow(spawnY - player.y, 2));
+        const farEnough = distanceToPlayer > WARRIOR_AGGRO_RANGE * 2;
+
+        console.log(`Attempt ${attempts}: Spawn at (${gridX},${gridY}). Walkable: ${walkableResult}. Distance to player: ${distanceToPlayer.toFixed(2)}. Far enough: ${farEnough}`);
+
+
+        if (walkableResult && farEnough) {
             foundValidSpot = true;
         }
         attempts++;
     }
 
     if (!foundValidSpot) {
-        console.warn(`Could not find suitable spawn location for warrior after ${maxAttempts} attempts.`);
+        console.warn(`Could not find suitable spawn location for warrior after ${maxAttempts} attempts. Map might be too full or player position too central.`);
         return;
     }
 
@@ -436,7 +444,7 @@ function spawnWarrior() {
         aggroRange: WARRIOR_AGGRO_RANGE,
         attackRange: 0.8
     });
-    console.log(`Warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}). Total warriors: ${warriors.length}`);
+    console.log(`SUCCESS: Warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}). Total warriors: ${warriors.length}`);
 }
 
 function updateWarriors() {
@@ -471,9 +479,7 @@ function updateWarriors() {
                 let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
 
                 // Improved collision for warriors: check next tile
-                const nextGridX = Math.floor(potentialNewX);
-                const nextGridY = Math.floor(potentialNewY);
-
+                // Note: isWalkable expects grid coordinates, so floor the float positions for the check
                 if (isWalkable(potentialNewX, potentialNewY)) {
                     warrior.x = potentialNewX;
                     warrior.y = potentialNewY;
@@ -502,9 +508,9 @@ function updateWarriors() {
                     const randomOffsetMagnitude = Math.random() * 3 + 1;
                     const randomAngle = Math.random() * Math.PI * 2;
                     const targetCandidateX = warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude; // Don't floor yet, keep float for target
-                    const targetCandidateY = warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude;
+                    const targetCandidateY = warrior.y + Math.sin(randomAngle) * Math.random() * randomOffsetMagnitude;
 
-                    // Check if the destination tile is walkable
+                    // Check if the destination tile is walkable (using floor for grid lookup)
                     if (isWalkable(Math.floor(targetCandidateX), Math.floor(targetCandidateY))) {
                         warrior.targetX = targetCandidateX;
                         warrior.targetY = targetCandidateY;
@@ -672,7 +678,8 @@ function draw() {
             ctx.strokeStyle = warrior.state === WARRIOR_STATE.CHASING ? 'red' : 'rgba(255, 165, 0, 0.5)'; // Orange if idle, red if chasing
             ctx.beginPath();
             // Convert world aggro range to screen pixels (approximate, for visual only)
-            const aggroRangeScreen = warrior.aggroRange * (TILE_ISO_WIDTH / 2) * 1.5; // Scale it visually
+            // This calculation is a simplification for visual representation
+            const aggroRangeScreen = warrior.aggroRange * (TILE_ISO_WIDTH / 2) * 1.5; 
             ctx.arc(warriorScreenPos.x + TILE_ISO_WIDTH / 2, warriorScreenPos.y + TILE_ISO_HEIGHT / 2, aggroRangeScreen, 0, Math.PI * 2);
             ctx.stroke();
 
@@ -733,6 +740,8 @@ function draw() {
 
 // --- Game Loop ---
 function gameLoop(currentTime) {
+    // console.log("Game loop running. CurrentTime:", currentTime); // TEMPORARY: Verify game loop is active
+
     let currentDx = 0;
     let currentDy = 0;
 
@@ -780,10 +789,18 @@ function gameLoop(currentTime) {
     camera.y = player.y;
 
     // --- Warrior Spawning Logic ---
+    // console.log(`CurrentTime: ${currentTime}, LastSpawnTime: ${lastWarriorSpawnTime}, Interval: ${WARRIOR_SPAWN_INTERVAL}`); // Uncomment for extreme detail
+    // console.log(`Time since last spawn: ${currentTime - lastWarriorSpawnTime}`); // Uncomment for extreme detail
+
+
     if (currentTime - lastWarriorSpawnTime > WARRIOR_SPAWN_INTERVAL) {
+        console.log(`--- Attempting to spawn warrior! Time elapsed: ${currentTime - lastWarriorSpawnTime} ms ---`);
         spawnWarrior();
         lastWarriorSpawnTime = currentTime;
+    } else {
+        // console.log("Not yet time to spawn warrior."); // Too verbose for general use
     }
+
 
     // --- Update Warrior Logic ---
     updateWarriors();

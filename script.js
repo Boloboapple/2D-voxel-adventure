@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 10; // <--- INCREMENTED TO 10 FOR PLAYER SORTING REFINEMENT
+const GAME_VERSION = 12; // <--- INCREMENTED TO 12 FOR REVISED PLAYER SORTING
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -305,8 +305,8 @@ function draw() {
                 x: x, y: y,
                 screenX: screenPos.x,
                 screenY: screenPos.y,
-                sortY: screenPos.y + TILE_ISO_HEIGHT, // Sort by the lowest point of the tile
-                colorSet: groundColorSet
+                // Sort by grid Y (major), then screen Y (minor), then a small offset for base layer
+                sortY: (y * 1000) + (screenPos.y + TILE_ISO_HEIGHT) + 0.000 // Base for tiles
             });
 
             // If it's a tree, add its components as separate drawables
@@ -332,9 +332,8 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH * TRUNK_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE,
                     colors: TREE_TRUNK_COLOR,
-                    // Sort by the lowest point of the trunk.
-                    // Player will be sorted between trunk and leaves
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT
+                    // Trunk should be drawn after the tile, but before player
+                    sortY: (y * 1000) + (screenPos.y + TILE_ISO_HEIGHT) + 0.1 // Just slightly above tile base
                 });
 
                 // Add leaves
@@ -347,15 +346,16 @@ function draw() {
                     isoWidth: TILE_ISO_WIDTH * LEAVES_ISO_WIDTH_SCALE,
                     isoHeight: TILE_ISO_HEIGHT * LEAVES_ISO_HEIGHT_SCALE,
                     colors: tileColors[TILE_TYPE_TREE], // Tree leaves use TILE_TYPE_TREE colors
-                    // Leaves have a higher sortY to be drawn after player and trunk
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT + LEAVES_Z_HEIGHT
+                    // Leaves should be drawn after player body and legs (highest layer for objects on tile)
+                    sortY: (y * 1000) + (screenPos.y + TILE_ISO_HEIGHT) + 0.4 // Higher than player parts
                 });
             }
         }
     }
 
     // --- Add Player components to drawables separately ---
-    const playerScreenPos = isoToScreen(player.x, player.y); // Use interpolated player.x, player.y
+    // Use interpolated player.x, player.y for player's current visual position
+    const playerScreenPos = isoToScreen(player.x, player.y);
 
     // Animation offset for legs
     let animOffsetA = 0;
@@ -370,25 +370,24 @@ function draw() {
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
 
-    // Calculate base Y for the entire player figure (feet on the ground)
-    // This is the effective ground level for the player.
-    const playerActualGroundY = playerScreenPos.y + TILE_ISO_HEIGHT;
+    // Calculate the base Y for the player's "feet" for sorting purposes.
+    // This needs to be above the tile's base, but below tree leaves.
+    // Use player.y (interpolated) as the major sort key.
+    const playerZSortBase = (player.y * 1000) + (playerScreenPos.y + TILE_ISO_HEIGHT) + 0.2; // Player base is above tile and trunk
 
-    // Calculate the top of the legs relative to playerActualGroundY and visual lift
-    const legsTopY = playerActualGroundY - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) - PLAYER_VISUAL_LIFT_OFFSET;
 
     // Player Leg A
     drawables.push({
         type: 'playerLeg',
         x: player.x, y: player.y,
         screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH * 0.1),
-        screenY: legsTopY + animOffsetA,
+        screenY: playerScreenPos.y + TILE_ISO_HEIGHT - PLAYER_VISUAL_LIFT_OFFSET - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetA,
         zHeight: PLAYER_LEG_Z_HEIGHT,
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // Sort by the visual bottom of the leg. Add a tiny offset for distinctness.
-        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.001
+        // Legs sort at their base, with a tiny offset for distinctness.
+        sortY: playerZSortBase + 0.001
     });
 
     // Player Leg B
@@ -396,40 +395,38 @@ function draw() {
         type: 'playerLeg',
         x: player.x, y: player.y,
         screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) + (PLAYER_BODY_ISO_WIDTH / 2) - (PLAYER_LEG_ISO_WIDTH) - (PLAYER_BODY_ISO_WIDTH * 0.1),
-        screenY: legsTopY + animOffsetB,
+        screenY: playerScreenPos.y + TILE_ISO_HEIGHT - PLAYER_VISUAL_LIFT_OFFSET - PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + animOffsetB,
         zHeight: PLAYER_LEG_Z_HEIGHT,
         isoWidth: PLAYER_LEG_ISO_WIDTH,
         isoHeight: PLAYER_LEG_ISO_HEIGHT,
         colors: player.legColor,
-        // Sort by the visual bottom of the leg. Add a tiny offset for distinctness.
-        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.002
+        // Legs sort at their base, with a tiny offset for distinctness.
+        sortY: playerZSortBase + 0.002
     });
 
     // Player Body
-    const bodyTopY = legsTopY - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2);
     drawables.push({
         type: 'playerBody',
         x: player.x, y: player.y,
         screenX: playerScreenPos.x + (TILE_ISO_WIDTH / 2) - (PLAYER_BODY_ISO_WIDTH / 2),
-        screenY: bodyTopY,
+        screenY: playerScreenPos.y + TILE_ISO_HEIGHT - PLAYER_VISUAL_LIFT_OFFSET - PLAYER_LEG_Z_HEIGHT - PLAYER_BODY_Z_HEIGHT + (PLAYER_BODY_ISO_HEIGHT / 2),
         zHeight: PLAYER_BODY_Z_HEIGHT,
         isoWidth: PLAYER_BODY_ISO_WIDTH,
         isoHeight: PLAYER_BODY_ISO_HEIGHT,
         colors: player.bodyColor,
-        // The sortY for the body should be its lowest point, where it connects to the legs.
-        // It needs to be consistently sorted *after* the legs.
-        sortY: legsTopY + PLAYER_LEG_Z_HEIGHT + (PLAYER_LEG_ISO_HEIGHT / 2) + 0.003
+        // Body sorts above the legs' base.
+        sortY: playerZSortBase + 0.003
     });
 
 
-    // Sort drawables by their sortY (depth), then by grid Y (for tie-breaking on same screenY line), then by grid X
+    // Sort drawables by their sortY (depth), then by interpolated grid Y, then by interpolated grid X, then by type order.
     drawables.sort((a, b) => {
         // Primary sort by actual screen Y of their lowest point (or effective base)
         if (a.sortY !== b.sortY) {
             return a.sortY - b.sortY;
         }
         // Secondary sort by interpolated grid Y for items on the same sortY level (important for isometric depth)
-        // This is key for smooth sorting during player movement.
+        // This is key for smooth sorting during player movement against other objects on the map.
         if (a.y !== b.y) {
             return a.y - b.y;
         }
@@ -437,9 +434,14 @@ function draw() {
         if (a.x !== b.x) {
             return a.x - b.x;
         }
-        // Tie-breaker for objects on the exact same tile and same sortY level.
+        // Tie-breaker for objects on the exact same tile and same calculated sortY.
         // This order dictates what draws on top when all other sorting criteria are equal.
-        // Order: Tile -> Tree Trunk -> Player Leg -> Player Body -> Tree Leaves
+        // Order (from bottom to top drawing, lowest number draws first):
+        // 0: Tile (Grass/Water)
+        // 1: Tree Trunk
+        // 2: Player Leg
+        // 3: Player Body
+        // 4: Tree Leaves
         const typeOrder = { 'tile': 0, 'treeTrunk': 1, 'playerLeg': 2, 'playerBody': 3, 'treeLeaves': 4 };
         return typeOrder[a.type] - typeOrder[b.type];
     });
@@ -447,7 +449,8 @@ function draw() {
     // Draw all sorted entities
     drawables.forEach(entity => {
         if (entity.type === 'tile') {
-            drawIsometricDiamond(entity.colorSet, entity.screenX, entity.screenY);
+            // Retrieve the tile's actual type from the gameMap to get its color
+            drawIsometricDiamond(tileColors[gameMap[entity.y][entity.x]], entity.screenX, entity.screenY);
         } else if (entity.type === 'treeTrunk') {
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         } else if (entity.type === 'treeLeaves') {

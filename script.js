@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 35; // <--- INCREMENTED TO 35 for archer logic
+const GAME_VERSION = 36; // <--- INCREMENTED TO 36 for camps
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -53,10 +53,13 @@ const WARRIOR_BODY_COLOR = { top: '#B22222', left: '#8B0000', right: '#660000' }
 const WARRIOR_LEG_COLOR = { top: '#4F4F4F', left: '#363636', right: '#292929' }; // Dark Grey (Melee)
 const STICK_COLOR = { top: '#8B4513', left: '#654321', right: '#4A2C00' }; // Brownish for melee stick
 
-// NEW Archer Colors and Arrow Colors
+// Archer Colors and Arrow Colors
 const ARCHER_BODY_COLOR = { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' }; // Green
 const ARCHER_LEG_COLOR = { top: '#4F4F4F', left: '#363636', right: '#292929' }; // Dark Grey (Archer)
 const ARROW_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; // Brownish for the arrow
+
+// NEW Camp Colors
+const CAMP_COLOR = { top: '#8B4513', left: '#654321', right: '#4A2C00' }; // Brown
 
 // --- Player Object ---
 const player = {
@@ -94,9 +97,7 @@ const camera = {
 
 // --- Enemy Warrior Configuration ---
 const warriors = [];
-const WARRIOR_SPAWN_INTERVAL = 100; // 100 milliseconds = spawn almost every frame
-let lastWarriorSpawnTime = 0; // Will be initialized to 0 in setupWorld
-const MAX_WARRIORS = 50; // Increased max warriors even further
+const MAX_WARRIORS = 50;
 
 const WARRIOR_AGGRO_RANGE = 5; // Distance in world units for player detection (Melee)
 const WARRIOR_MOVE_SPEED = 0.03; // Warriors move slightly slower than player
@@ -112,7 +113,7 @@ const WARRIOR_STATE = {
     SHOOTING: 'shooting' // Archer is firing an arrow
 };
 
-// NEW Archer Configuration
+// Archer Configuration
 const ARCHER_SPAWN_CHANCE = 0.20; // 20% chance to be an archer
 const ARCHER_AGGRO_RANGE = 8; // Longer range for archers
 const ARCHER_ATTACK_RANGE = 7; // Within aggro, they'll shoot (doesn't cause movement stop, just defines target range)
@@ -125,6 +126,18 @@ const ARROW_Z_OFFSET = TILE_ISO_HEIGHT * 0.5; // Visual height offset for arrow
 const ARROW_VISUAL_LENGTH = TILE_ISO_WIDTH * 0.3; // Length of the arrow
 const arrows = []; // Array to hold arrow projectiles
 
+// NEW Camp Configuration
+const camps = []; // Array to hold enemy camps
+const MIN_CAMPS = 1;
+const MAX_CAMPS = 3; // Number of camps to generate
+const MIN_CAMP_RADIUS = 3; // Minimum size in world units
+const MAX_CAMP_RADIUS = 7; // Maximum size in world units
+
+// How far from player a camp must spawn (to avoid immediate aggro)
+const MIN_CAMP_SPAWN_DIST_FROM_PLAYER = 15;
+
+const WARRIOR_SPAWN_INTERVAL = 1500; // Warriors spawn less frequently, but from camps now
+let lastWarriorSpawnTime = 0;
 
 // --- World Data Structure ---
 const worldMap = [];
@@ -289,11 +302,10 @@ function drawCharacter(character, screenPos, sortY) {
             });
         } else if (character.type === 'archer') {
             // Simple visual for archer holding a bow during "aiming"
-            // This is just a placeholder; you'd replace this with a proper bow drawing
             let bowHeight = TILE_ISO_HEIGHT * 0.8;
             let bowWidth = TILE_ISO_WIDTH * 0.2;
             let bowOffsetIsoX = TILE_ISO_WIDTH * 0.2;
-            let bowOffsetIsoY = -TILE_ISO_HEIGHT * 0.1; // Hold it up a bit
+            let bowOffsetIsoY = -TILE_ISO_HEIGHT * 0.1;
 
             drawables.push({
                 type: 'characterPart',
@@ -303,7 +315,7 @@ function drawCharacter(character, screenPos, sortY) {
                 zHeight: bowHeight,
                 isoWidth: bowWidth,
                 isoHeight: bowWidth / 2,
-                colors: STICK_COLOR, // Re-using stick color for simplicity
+                colors: STICK_COLOR,
                 sortY: sortY + 0.004
             });
         }
@@ -356,6 +368,53 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
 }
 
 
+// NEW: Function to generate camps
+function generateCamps() {
+    const numCamps = Math.floor(Math.random() * (MAX_CAMPS - MIN_CAMPS + 1)) + MIN_CAMPS;
+    console.log(`Generating ${numCamps} enemy camps.`);
+
+    for (let i = 0; i < numCamps; i++) {
+        let campX, campY, campRadius;
+        let attempts = 0;
+        const maxAttempts = 50; // Try several times to find a good spot
+
+        let foundValidCampSpot = false;
+        while (attempts < maxAttempts && !foundValidCampSpot) {
+            // Random position for the center of the camp
+            campX = Math.random() * WORLD_UNITS_WIDTH;
+            campY = Math.random() * WORLD_UNITS_HEIGHT;
+            campRadius = Math.random() * (MAX_CAMP_RADIUS - MIN_CAMP_RADIUS) + MIN_CAMP_RADIUS;
+
+            const gridX = Math.floor(campX);
+            const gridY = Math.floor(campY);
+
+            // Check if the center is walkable and far enough from player
+            const distToPlayer = Math.sqrt(Math.pow(campX - player.x, 2) + Math.pow(campY - player.y, 2));
+
+            // Basic check for camp center being walkable and far enough from player
+            if (isWalkable(gridX, gridY) && distToPlayer > MIN_CAMP_SPAWN_DIST_FROM_PLAYER) {
+                // Also check if the entire camp area is mostly walkable (optional, but good for robust camps)
+                // For simplicity now, we just check the center.
+                // A more robust check would iterate over the area covered by the radius.
+                foundValidCampSpot = true;
+            }
+            attempts++;
+        }
+
+        if (foundValidCampSpot) {
+            camps.push({
+                x: campX,
+                y: campY,
+                radius: campRadius,
+                isIntruded: false // New flag: true when player enters
+            });
+            console.log(`Camp ${i + 1} spawned at (${campX.toFixed(2)}, ${campY.toFixed(2)}) with radius ${campRadius.toFixed(2)}.`);
+        } else {
+            console.warn(`Could not find a valid spot for Camp ${i + 1} after ${maxAttempts} attempts.`);
+        }
+    }
+}
+
 // --- Initial Map/World Setup Function ---
 function setupWorld() {
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
@@ -366,8 +425,9 @@ function setupWorld() {
     }
 
     trees.length = 0;
-    warriors.length = 0; // Clear warriors on new map generation
-    arrows.length = 0; // Clear arrows on new map generation
+    warriors.length = 0;
+    arrows.length = 0;
+    camps.length = 0; // Clear camps on new map generation
 
     const biomesToGenerate = [
         { type: 'lake', maxTilesFactor: 0.03, spreadChance: 0.6, numInstances: 3 },
@@ -433,6 +493,9 @@ function setupWorld() {
     player.animationFrame = 0;
     player.frameCount = 0;
 
+    // Generate Camps AFTER player is placed so camps can spawn away from player
+    generateCamps();
+
     lastWarriorSpawnTime = 0; // Initialize to 0 to trigger immediate spawn on first loop
 }
 
@@ -469,47 +532,47 @@ function isWalkable(x, y) {
 
 // --- Warrior Logic ---
 function spawnWarrior() {
-    console.log(`spawnWarrior() called. Current warriors: ${warriors.length}, Max warriors: ${MAX_WARRIORS}`);
-
     if (warriors.length >= MAX_WARRIORS) {
-        console.log(`Max warriors (${MAX_WARRIORS}) reached. Not spawning.`);
         return;
     }
 
+    if (camps.length === 0) {
+        console.warn("No enemy camps available to spawn warriors. Preventing spawn.");
+        return; // No camps, no warrior spawns
+    }
+
+    // Select a random camp to spawn the warrior in
+    const targetCampIndex = Math.floor(Math.random() * camps.length);
+    const targetCamp = camps[targetCampIndex];
+
     let spawnX, spawnY;
     let attempts = 0;
-    const maxAttempts = 1; // Still reduced to 1 for debugging
+    const maxAttempts = 20; // Increased attempts to find spot inside camp
     let foundValidSpot = false;
 
-    // Try to find a spawn location that is 'ground' and not too close to the player
+    // Try to find a spawn location *inside* the chosen camp
     while (attempts < maxAttempts && !foundValidSpot) {
-        spawnX = Math.random() * WORLD_UNITS_WIDTH;
-        spawnY = Math.random() * WORLD_UNITS_HEIGHT;
+        // Random angle and distance from camp center within radius
+        const angle = Math.random() * Math.PI * 2;
+        const distFromCenter = Math.random() * targetCamp.radius;
+
+        spawnX = targetCamp.x + Math.cos(angle) * distFromCenter;
+        spawnY = targetCamp.y + Math.sin(angle) * distFromCenter;
 
         const gridX = Math.floor(spawnX);
         const gridY = Math.floor(spawnY);
 
-        const walkableResult = isWalkable(gridX, gridY);
-        const distanceToPlayer = Math.sqrt(Math.pow(spawnX - player.x, 2) + Math.pow(spawnY - player.y, 2));
-        const farEnough = distanceToPlayer > WARRIOR_AGGRO_RANGE * 2; // Spawn far from player aggro
-
-        console.log(`Attempt ${attempts}: Spawn at (${gridX},${gridY}). Walkable: ${walkableResult}. Distance to player: ${distanceToPlayer.toFixed(2)}. Far enough: ${farEnough}`);
-
-
-        // *** TEMPORARY DEBUGGING CHANGE: FORCE VALID SPOT ***
-        foundValidSpot = true; // THIS LINE FORCES A VALID SPOT FOR DEBUGGING
-        // *** END TEMPORARY DEBUGGING CHANGE ***
-
+        if (isWalkable(gridX, gridY)) {
+            foundValidSpot = true;
+        }
         attempts++;
     }
 
     if (!foundValidSpot) {
-        // This 'if' block should now almost never be hit with foundValidSpot = true
-        console.warn(`Could not find suitable spawn location for warrior after ${maxAttempts} attempts. Map might be too full or player position too central.`);
+        console.warn(`Could not find suitable spawn location within camp at (${targetCamp.x.toFixed(2)}, ${targetCamp.y.toFixed(2)}) for warrior after ${maxAttempts} attempts.`);
         return;
     }
 
-    // --- Determine warrior type (melee or archer) ---
     const isArcher = Math.random() < ARCHER_SPAWN_CHANCE;
     let newWarrior;
 
@@ -517,35 +580,37 @@ function spawnWarrior() {
         newWarrior = {
             x: spawnX,
             y: spawnY,
-            type: 'archer', // New type
+            type: 'archer',
             bodyColor: ARCHER_BODY_COLOR,
             legColor: ARCHER_LEG_COLOR,
-            isMoving: false, // Archers do not move
+            isMoving: false,
             animationFrame: 0,
             animationSpeed: 10,
             frameCount: 0,
-            health: WARRIOR_HEALTH, // Can share health pool
+            health: WARRIOR_HEALTH,
             maxHealth: WARRIOR_HEALTH,
-            state: WARRIOR_STATE.IDLE, // Start idle
+            state: WARRIOR_STATE.IDLE,
             targetX: null,
             targetY: null,
-            aggroRange: ARCHER_AGGRO_RANGE, // Specific archer range
-            attackRange: ARCHER_ATTACK_RANGE, // Specific archer attack range
-            attackDamage: ARCHER_DAMAGE, // Specific archer damage
-            attackCooldown: ARCHER_ATTACK_COOLDOWN, // Specific archer cooldown
+            aggroRange: ARCHER_AGGRO_RANGE,
+            attackRange: ARCHER_ATTACK_RANGE,
+            attackDamage: ARCHER_DAMAGE,
+            attackCooldown: ARCHER_ATTACK_COOLDOWN,
             lastAttackTime: 0,
             isAttacking: false,
-            attackAnimationFrame: 0, // For bow pull/release
-            attackFrameCount: 0, // For bow animation timing
-            hitChance: ARCHER_HIT_CHANCE, // New property for archer
-            aimProgress: 0 // New property for aiming animation
+            attackAnimationFrame: 0,
+            attackFrameCount: 0,
+            hitChance: ARCHER_HIT_CHANCE,
+            aimProgress: 0,
+            campId: targetCampIndex, // Link warrior to its camp
+            isFreed: targetCamp.isIntruded // If camp is already intruded, warrior is free
         };
-        console.log(`SUCCESS: Archer spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}). Total warriors: ${warriors.length}`);
+        console.log(`SUCCESS: Archer spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}) in Camp ${targetCampIndex}. Total warriors: ${warriors.length}`);
     } else {
         newWarrior = {
             x: spawnX,
             y: spawnY,
-            type: 'melee', // Explicitly 'melee' for regular warriors
+            type: 'melee',
             bodyColor: WARRIOR_BODY_COLOR,
             legColor: WARRIOR_LEG_COLOR,
             isMoving: false,
@@ -565,8 +630,10 @@ function spawnWarrior() {
             isAttacking: false,
             attackAnimationFrame: 0,
             attackFrameCount: 0,
+            campId: targetCampIndex, // Link warrior to its camp
+            isFreed: targetCamp.isIntruded // If camp is already intruded, warrior is free
         };
-        console.log(`SUCCESS: Melee warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}). Total warriors: ${warriors.length}`);
+        console.log(`SUCCESS: Melee warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}) in Camp ${targetCampIndex}. Total warriors: ${warriors.length}`);
     }
 
     warriors.push(newWarrior);
@@ -574,6 +641,30 @@ function spawnWarrior() {
 
 function updateWarriors() {
     const currentTime = Date.now(); // Get current time once per update for all warriors
+
+    // --- Check for Player Intrusion into Camps ---
+    camps.forEach(camp => {
+        if (!camp.isIntruded) { // Only check if not already intruded
+            const distToCampCenter = Math.sqrt(Math.pow(player.x - camp.x, 2) + Math.pow(player.y - camp.y, 2));
+            if (distToCampCenter <= camp.radius) {
+                camp.isIntruded = true;
+                console.log(`Player has intruded Camp at (${camp.x.toFixed(2)}, ${camp.y.toFixed(2)})! All warriors from this camp are now freed.`);
+                // Set all warriors associated with this camp to be 'freed'
+                warriors.forEach(warrior => {
+                    if (warrior.campId === camps.indexOf(camp)) {
+                        warrior.isFreed = true;
+                        // Force state change if needed, e.g., if they were idle inside camp
+                        if (warrior.state === WARRIOR_STATE.IDLE) {
+                            warrior.state = WARRIOR_STATE.CHASING; // They will now chase the player
+                            warrior.targetX = null; // Clear idle target
+                            warrior.targetY = null;
+                        }
+                    }
+                });
+            }
+        }
+    });
+
 
     warriors.forEach((warrior, index) => {
         const distToPlayer = Math.sqrt(Math.pow(warrior.x - player.x, 2) + Math.pow(warrior.y - player.y, 2));
@@ -594,7 +685,7 @@ function updateWarriors() {
         if (warrior.type === 'melee') {
             // --- Melee Warrior State Transitions ---
             if (warrior.state === WARRIOR_STATE.IDLE) {
-                if (distToPlayer <= warrior.aggroRange) {
+                if (distToPlayer <= warrior.aggroRange || warrior.isFreed) { // If freed, they'll chase
                     warrior.state = WARRIOR_STATE.CHASING;
                     console.log(`Melee Warrior ${index} now CHASING player.`);
                 }
@@ -606,15 +697,13 @@ function updateWarriors() {
                     warrior.attackAnimationFrame = 0;
                     warrior.attackFrameCount = 0;
                     console.log(`Melee Warrior ${index} now ATTACKING player!`);
-                } else if (distToPlayer > warrior.aggroRange * 1.5) { // If player moves too far while chasing
+                } else if (!warrior.isFreed && distToPlayer > warrior.aggroRange * 1.5) { // Only go idle if not freed and player far
                     warrior.state = WARRIOR_STATE.IDLE;
                     console.log(`Melee Warrior ${index} is now IDLE (player too far while chasing).`);
                     warrior.targetX = null;
                     warrior.targetY = null;
                 }
             } else if (warrior.state === WARRIOR_STATE.ATTACKING) {
-                // After attack animation, if player is still in range, go back to chasing to re-evaluate
-                // If player moved out of range, transition to CHASING (which will then go to IDLE)
                 if (!warrior.isAttacking) { // This means the attack animation sequence completed
                     warrior.state = WARRIOR_STATE.CHASING;
                     console.log(`Melee Warrior ${index} attack animation finished, now re-evaluating (CHASING).`);
@@ -635,7 +724,22 @@ function updateWarriors() {
                     let potentialNewX = warrior.x + dx * WARRIOR_MOVE_SPEED;
                     let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
 
-                    // Improved collision for warriors: check next tile
+                    // Apply camp confinement if not freed
+                    if (!warrior.isFreed) {
+                        const currentCamp = camps[warrior.campId];
+                        const distFromCampCenter = Math.sqrt(Math.pow(potentialNewX - currentCamp.x, 2) + Math.pow(potentialNewY - currentCamp.y, 2));
+                        if (distFromCampCenter > currentCamp.radius) {
+                            // If moving out of camp, force them back towards center slightly or stop
+                            potentialNewX = warrior.x; // Stay put if trying to leave
+                            potentialNewY = warrior.y;
+                            warrior.isMoving = false; // Stop trying to move if hitting boundary
+                            warrior.targetX = currentCamp.x; // Maybe set a target to center of camp
+                            warrior.targetY = currentCamp.y;
+                            // console.log(`Melee warrior ${index} confined to camp.`); // Keep this for debugging if needed
+                        }
+                    }
+
+                    // Check walkability after potential confinement
                     if (isWalkable(potentialNewX, potentialNewY)) {
                         warrior.x = potentialNewX;
                         warrior.y = potentialNewY;
@@ -671,11 +775,10 @@ function updateWarriors() {
                     if (warrior.attackAnimationFrame >= 4) { // After 4 frames, animation cycle ends
                         warrior.attackAnimationFrame = 0; // Reset for next attack
                         warrior.isAttacking = false; // Attack animation done
-                        // State transition handled at the top of the 'ATTACKING' state block
                     }
                 }
             } else if (warrior.state === WARRIOR_STATE.IDLE) {
-                // Idle movement for melee warriors
+                // If not freed, idle movement is restricted to within camp
                 if (!warrior.isMoving && Math.random() < WARRIOR_IDLE_MOVE_CHANCE) {
                     let foundTarget = false;
                     let attempts = 0;
@@ -686,7 +789,16 @@ function updateWarriors() {
                         const targetCandidateX = warrior.x + Math.cos(randomAngle) * randomOffsetMagnitude;
                         const targetCandidateY = warrior.y + Math.sin(randomAngle) * randomOffsetMagnitude;
 
-                        if (isWalkable(Math.floor(targetCandidateX), Math.floor(targetCandidateY))) {
+                        let isValidIdleTarget = true;
+                        if (!warrior.isFreed) {
+                            const currentCamp = camps[warrior.campId];
+                            const distFromCampCenter = Math.sqrt(Math.pow(targetCandidateX - currentCamp.x, 2) + Math.pow(targetCandidateY - currentCamp.y, 2));
+                            if (distFromCampCenter > currentCamp.radius) {
+                                isValidIdleTarget = false; // Cannot set target outside camp
+                            }
+                        }
+
+                        if (isValidIdleTarget && isWalkable(Math.floor(targetCandidateX), Math.floor(targetCandidateY))) {
                             warrior.targetX = targetCandidateX;
                             warrior.targetY = targetCandidateY;
                             warrior.isMoving = true;
@@ -714,13 +826,25 @@ function updateWarriors() {
                         let potentialNewX = warrior.x + dx * WARRIOR_MOVE_SPEED;
                         let potentialNewY = warrior.y + dy * WARRIOR_MOVE_SPEED;
 
-                        if (isWalkable(potentialNewX, potentialNewY)) {
+                        // Check again for camp confinement during idle movement
+                        if (!warrior.isFreed) {
+                            const currentCamp = camps[warrior.campId];
+                            const distFromCampCenter = Math.sqrt(Math.pow(potentialNewX - currentCamp.x, 2) + Math.pow(potentialNewY - currentCamp.y, 2));
+                            if (distFromCampCenter > currentCamp.radius) {
+                                warrior.isMoving = false; // Stop moving if trying to leave camp
+                                warrior.targetX = null;
+                                warrior.targetY = null;
+                                // console.log(`Melee warrior ${index} confined to camp during idle.`); // Keep for debugging if needed
+                            }
+                        }
+
+                        if (warrior.isMoving && isWalkable(potentialNewX, potentialNewY)) { // Check if still moving after confinement
                             warrior.x = potentialNewX;
                             warrior.y = potentialNewY;
-                        } else {
-                            warrior.isMoving = false;
-                            warrior.targetX = null;
-                            warrior.targetY = null;
+                        } else if (warrior.isMoving) { // If still trying to move but hit non-walkable
+                             warrior.isMoving = false;
+                             warrior.targetX = null;
+                             warrior.targetY = null;
                         }
                     }
                 }
@@ -731,46 +855,43 @@ function updateWarriors() {
 
             // --- Archer State Transitions ---
             if (warrior.state === WARRIOR_STATE.IDLE) {
-                if (distToPlayer <= warrior.aggroRange) {
+                if (distToPlayer <= warrior.aggroRange || warrior.isFreed) { // If freed, they'll always try to aggro
                     warrior.state = WARRIOR_STATE.AIMING;
-                    warrior.aimProgress = 0; // Reset aim progress
+                    warrior.aimProgress = 0;
                     console.log(`Archer ${index} is now AIMING at player.`);
                 }
             } else if (warrior.state === WARRIOR_STATE.AIMING || warrior.state === WARRIOR_STATE.SHOOTING) {
-                if (distToPlayer > warrior.aggroRange) { // If player leaves aggro range
+                // If player leaves aggro range AND archer is not freed (still confined to camp)
+                if (!warrior.isFreed && distToPlayer > warrior.aggroRange) {
                     warrior.state = WARRIOR_STATE.IDLE;
                     warrior.aimProgress = 0;
-                    warrior.isAttacking = false; // Stop attack animation
+                    warrior.isAttacking = false;
                     console.log(`Archer ${index} stopped AIMING (player out of range).`);
                 } else if (currentTime - warrior.lastAttackTime > warrior.attackCooldown) {
-                    // If cooldown is ready and player is in range, aim
+                    // If cooldown is ready and player is in range (or warrior is freed)
                     warrior.state = WARRIOR_STATE.AIMING;
-                    warrior.isAttacking = true; // Trigger attack animation (bow pull)
-                    warrior.attackAnimationFrame = 0; // Reset animation
+                    warrior.isAttacking = true;
+                    warrior.attackAnimationFrame = 0;
                     warrior.attackFrameCount = 0;
                 }
-                // Else, if still on cooldown, just remain in current state (AIMING/SHOOTING)
-                // No new action until cooldown is over
             }
 
             // --- Archer Behavior ---
             if (warrior.state === WARRIOR_STATE.AIMING) {
-                warrior.isAttacking = true; // Keep attack animation active during aiming
+                warrior.isAttacking = true;
 
                 warrior.attackFrameCount++;
-                if (warrior.attackFrameCount % 8 === 0) { // Slower animation for aiming/bow draw
-                    warrior.attackAnimationFrame = (warrior.attackAnimationFrame + 1) % 4; // Use 4 frames for aiming/shooting animation
+                if (warrior.attackFrameCount % 8 === 0) {
+                    warrior.attackAnimationFrame = (warrior.attackAnimationFrame + 1) % 4;
                 }
 
                 warrior.aimProgress++;
-                const AIM_DURATION_FRAMES = 30; // Number of frames to aim before shooting (adjust as needed)
+                const AIM_DURATION_FRAMES = 30;
                 if (warrior.aimProgress >= AIM_DURATION_FRAMES) {
-                    // Attempt to shoot
-                    warrior.state = WARRIOR_STATE.SHOOTING; // Temporarily transition to shooting state for a single frame
-                    warrior.aimProgress = 0; // Reset aim progress
+                    warrior.state = WARRIOR_STATE.SHOOTING;
+                    warrior.aimProgress = 0;
 
                     if (Math.random() < warrior.hitChance) {
-                        // Calculate arrow direction - aim directly at player's current position
                         let arrowDx = player.x - warrior.x;
                         let arrowDy = player.y - warrior.y;
                         const arrowMagnitude = Math.sqrt(arrowDx * arrowDx + arrowDy * arrowDy);
@@ -788,21 +909,18 @@ function updateWarriors() {
                     } else {
                         console.log(`Archer ${index} MISSED the shot.`);
                     }
-                    warrior.lastAttackTime = currentTime; // Reset cooldown regardless of hit/miss
-                    warrior.isAttacking = false; // End attack animation for now
-                    warrior.state = WARRIOR_STATE.IDLE; // After shooting, go back to idle until next cooldown cycle/player re-enters range
+                    warrior.lastAttackTime = currentTime;
+                    warrior.isAttacking = false;
+                    warrior.state = WARRIOR_STATE.IDLE;
                 }
             } else if (warrior.state === WARRIOR_STATE.SHOOTING) {
-                // This state is very brief, just for the moment of actual shot
-                // The logic above immediately transitions out of it after shot creation
-                warrior.isAttacking = false; // Ensure animation stops quickly after shot
+                warrior.isAttacking = false;
                 warrior.aimProgress = 0;
-            } else { // IDLE state for archer
-                warrior.isAttacking = false; // Ensure attack animation is off if not aiming/shooting
-                warrior.aimProgress = 0; // Reset aim progress if idle
+            } else {
+                warrior.isAttacking = false;
+                warrior.aimProgress = 0;
             }
         }
-
 
         // Remove dead warriors
         if (warrior.health <= 0) {
@@ -818,15 +936,13 @@ function updateWarriors() {
 
         const arrowDistToPlayer = Math.sqrt(Math.pow(arrow.x - player.x, 2) + Math.pow(arrow.y - player.y, 2));
 
-        // Simple hit detection for arrow (within 0.5 world units of player center)
         if (arrowDistToPlayer < 0.5) {
             if (player.health > 0) {
                 player.health = Math.max(0, player.health - arrow.damage);
                 console.log(`Player hit by arrow! Health: ${player.health}`);
             }
-            arrows.splice(index, 1); // Remove arrow after hit
+            arrows.splice(index, 1);
         }
-        // Remove arrows that go far off screen (or out of world bounds) to prevent memory leak
         else if (arrow.x < -20 || arrow.x > WORLD_UNITS_WIDTH + 20 || arrow.y < -20 || arrow.y > WORLD_UNITS_HEIGHT + 20) {
             arrows.splice(index, 1);
         }
@@ -874,6 +990,39 @@ function draw() {
             }
         }
     }
+
+    // --- Add Camps to drawables array ---
+    camps.forEach(camp => {
+        const campScreenPos = isoToScreen(camp.x, camp.y);
+        // Convert world units radius to isometric pixels for drawing
+        // This is a rough conversion, as a perfect isometric circle is complex.
+        const isoRadius = camp.radius * (TILE_ISO_WIDTH / 2); // Roughly scales radius to screen space
+
+        // For drawing a 3D block that looks like a flattened circle from above
+        const displayIsoWidth = isoRadius * 2; // Diameter for the X-axis of the diamond
+        const displayIsoHeight = isoRadius; // Diameter for the Y-axis of the diamond (half of width for squish)
+
+        drawables.push({
+            type: 'camp',
+            x: camp.x, y: camp.y,
+            // Center the camp's drawn shape on its world (x,y)
+            screenX: campScreenPos.x + (TILE_ISO_WIDTH / 2) - (displayIsoWidth / 2),
+            screenY: campScreenPos.y + TILE_ISO_HEIGHT - (displayIsoHeight / 2), // Adjust Y to sit on the ground
+            zHeight: TILE_ISO_HEIGHT * 0.1, // Very thin camp ground
+            isoWidth: displayIsoWidth,
+            isoHeight: displayIsoHeight,
+            colors: CAMP_COLOR,
+            sortY: campScreenPos.y + TILE_ISO_HEIGHT + 0.0005 // Draw above ground, below characters/trees
+        });
+
+        // Debugging: Draw camp radius (actual circle in 2D plane)
+        ctx.strokeStyle = camp.isIntruded ? 'red' : 'rgba(100, 100, 100, 0.5)';
+        ctx.beginPath();
+        // This circle is drawn in screen coordinates relative to iso point for player's perspective
+        ctx.arc(campScreenPos.x + TILE_ISO_WIDTH / 2, campScreenPos.y + TILE_ISO_HEIGHT / 2, isoRadius, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
 
     // Add Trees
     trees.forEach(tree => {
@@ -969,18 +1118,7 @@ function draw() {
     });
 
 
-    // Sort drawables by their sortY
-    drawables.sort((a, b) => {
-        if (a.sortY !== b.sortY) {
-            return a.sortY - b.sortY;
-        }
-        // Consistent drawing order for objects at the same y-level to avoid z-fighting
-        // NEW: Added 'arrow' type
-        const typeOrder = { 'groundPatch': 0, 'treeTrunk': 1, 'characterPart': 2, 'treeLeaves': 3, 'arrow': 4 };
-        return typeOrder[a.type] - typeOrder[b.type];
-    });
-
-    // --- NEW: Add Arrows to drawables array before drawing ---
+    // Add Arrows to drawables array before drawing
     arrows.forEach(arrow => {
         const arrowScreenPos = isoToScreen(arrow.x, arrow.y);
         drawables.push({
@@ -996,11 +1134,23 @@ function draw() {
         });
     });
 
+    // Sort drawables by their sortY
+    drawables.sort((a, b) => {
+        if (a.sortY !== b.sortY) {
+            return a.sortY - b.sortY;
+        }
+        // Consistent drawing order for objects at the same y-level to avoid z-fighting
+        const typeOrder = { 'groundPatch': 0, 'camp': 1, 'treeTrunk': 2, 'characterPart': 3, 'treeLeaves': 4, 'arrow': 5 };
+        return typeOrder[a.type] - typeOrder[b.type];
+    });
+
     // Draw all sorted entities
     drawables.forEach(entity => {
         if (entity.type === 'groundPatch') {
             drawIsometricDiamond(entity.colors, entity.screenX, entity.screenY, entity.isoWidth, entity.isoHeight, DRAW_GROUND_BORDERS, GROUND_BORDER_COLOR, GROUND_BORDER_THICKNESS);
-        } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'characterPart' || entity.type === 'arrow') { // Render arrows as 3D blocks
+        } else if (entity.type === 'treeTrunk' || entity.type === 'treeLeaves' || entity.type === 'characterPart' || entity.type === 'arrow') {
+            drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
+        } else if (entity.type === 'camp') { // Draw camps as flat blocks
             drawIsometric3DBlock(entity.screenX, entity.screenY, entity.zHeight, entity.isoWidth, entity.isoHeight, entity.colors);
         }
     });
@@ -1025,17 +1175,6 @@ function draw() {
 
 // --- Game Loop ---
 function gameLoop(currentTime) {
-    // *** TEMPORARY: VERY VERBOSE LOGGING FOR DEBUGGING TIMING ***
-    // You can comment these out once you're confident in the spawning behavior
-    // console.log("------------------------------------------");
-    // console.log(`Game loop running. CurrentTime: ${currentTime.toFixed(2)}`);
-    // console.log(`Last Warrior Spawn Time: ${lastWarriorSpawnTime.toFixed(2)}`);
-    // console.log(`Time Since Last Spawn: ${(currentTime - lastWarriorSpawnTime).toFixed(2)} ms`);
-    // console.log(`Warrior Spawn Interval: ${WARRIOR_SPAWN_INTERVAL} ms`);
-    // console.log(`Condition (Time Since Last Spawn > Interval): ${(currentTime - lastWarriorSpawnTime) > WARRIOR_SPAWN_INTERVAL}`);
-    // console.log("------------------------------------------");
-    // *** END TEMPORARY VERBOSE LOGGING ***
-
     let currentDx = 0;
     let currentDy = 0;
 
@@ -1084,11 +1223,8 @@ function gameLoop(currentTime) {
 
     // --- Warrior Spawning Logic ---
     if (currentTime - lastWarriorSpawnTime > WARRIOR_SPAWN_INTERVAL) {
-        // console.log(`--- Attempting to spawn warrior! Time elapsed: ${currentTime - lastWarriorSpawnTime} ms ---`);
         spawnWarrior();
         lastWarriorSpawnTime = currentTime;
-    } else {
-        // console.log("Not yet time to spawn warrior.");
     }
 
     // --- Update Warrior Logic ---

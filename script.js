@@ -43,7 +43,7 @@ console.log(`Global Draw Offset: X=${globalDrawOffsetX}, Y=${globalDrawOffsetY}`
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 8; // <--- INCREMENTED TO 8 FOR PLAYER BODY/LEG SORTING FIXES!
+const GAME_VERSION = 9; // <--- INCREMENTED TO 8 FOR PLAYER BODY/LEG SORTING FIXES!
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");

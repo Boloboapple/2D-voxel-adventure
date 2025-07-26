@@ -18,23 +18,17 @@ const GROUND_BORDER_THICKNESS = 1;
 // Max height of the tallest object (tree) in pixels from its ground plane
 const MAX_OBJECT_HEIGHT_FROM_GROUND = TILE_ISO_HEIGHT * 3;
 
-// Calculate required canvas dimensions based on the new world size
-// These calculations now determine the *maximum potential* size of the canvas
-// to ensure all possible content fits, even with a large camera offset.
-const maxWorldScreenX = (WORLD_UNITS_WIDTH - 0) * (TILE_ISO_WIDTH / 2) + (WORLD_UNITS_HEIGHT - 0) * (TILE_ISO_WIDTH / 2);
-const minWorldScreenX = (0 - WORLD_UNITS_WIDTH) * (TILE_ISO_WIDTH / 2) + (0 - WORLD_UNITS_HEIGHT) * (TILE_ISO_WIDTH / 2);
-const maxWorldScreenY = (WORLD_UNITS_WIDTH + WORLD_UNITS_HEIGHT) * (TILE_ISO_HEIGHT / 2);
-const minWorldScreenY = (0 + 0) * (TILE_ISO_HEIGHT / 2);
-
-canvas.width = maxWorldScreenX - minWorldScreenX + TILE_ISO_WIDTH * 4; // Add extra padding
-canvas.height = maxWorldScreenY - minWorldScreenY + MAX_OBJECT_HEIGHT_FROM_GROUND + TILE_ISO_HEIGHT * 4;
+// --- Set Canvas Dimensions to a Fixed Size ---
+// This is more typical for games with a moving camera.
+// Adjust these values to your desired game window size.
+canvas.width = 1280; // Example: HD width
+canvas.height = 720; // Example: HD height
 
 // --- Global Offset for the Isometric Drawing ---
-// These offsets now define the fixed point (e.g., top-left of canvas) for drawing
-// All world coordinates will be shifted relative to the camera and then this offset.
-// This is effectively the screen's "origin" for isometric projection.
-const initialGlobalDrawOffsetX = (canvas.width / 2);
-const initialGlobalDrawOffsetY = (canvas.height / 2) + MAX_OBJECT_HEIGHT_FROM_GROUND; // Adjust for object heights
+// These offsets now define the center of the canvas in screen coordinates.
+// isoToScreen(camera.x, camera.y) will map to these coordinates.
+const initialGlobalDrawOffsetX = canvas.width / 2;
+const initialGlobalDrawOffsetY = (canvas.height / 2) + (MAX_OBJECT_HEIGHT_FROM_GROUND / 2); // Center vertically, adjusted for tall objects
 
 // Debugging: Log calculated values
 console.log(`Canvas Dimensions: ${canvas.width}x${canvas.height}`);
@@ -43,7 +37,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 26; // <--- INCREMENTED TO 26 for multiple biome instances, larger deserts, centered camera
+const GAME_VERSION = 27; // <--- INCREMENTED TO 27 for fixed canvas, corrected offsets, visible version
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -88,7 +82,6 @@ const PLAYER_VISUAL_LIFT_OFFSET = TILE_ISO_HEIGHT * 0.5;
 const camera = {
     x: player.x,
     y: player.y
-    // Removed smoothness for snapping to center
 };
 
 // --- World Data Structure ---
@@ -104,7 +97,7 @@ function isoToScreen(x, y) {
     const relativeX = x - camera.x;
     const relativeY = y - camera.y;
 
-    // Apply isometric projection relative to the center of the screen
+    // Apply isometric projection relative to the center of the canvas
     const screenX = (relativeX - relativeY) * (TILE_ISO_WIDTH / 2) + initialGlobalDrawOffsetX;
     const screenY = (relativeX + relativeY) * (TILE_ISO_HEIGHT / 2) + initialGlobalDrawOffsetY;
     return { x: screenX, y: screenY };
@@ -227,7 +220,6 @@ function setupWorld() {
     trees.length = 0; // Clear previous trees
 
     // Define biome types and their generation parameters
-    // Added 'numInstances' for multiple occurrences and adjusted factors
     const biomesToGenerate = [
         { type: 'lake', maxTilesFactor: 0.03, spreadChance: 0.6, numInstances: 3 }, // 3 small lakes
         { type: 'forest', maxTilesFactor: 0.08, spreadChance: 0.7, numInstances: 4 }, // 4 medium forests
@@ -301,25 +293,26 @@ function draw() {
 
     const drawables = [];
 
-    // --- Add Ground Patches based on World Map ---
-    // Only draw patches visible within the camera's view
-    // Calculate visible area based on canvas dimensions and tile size
-    const halfCanvasWidthUnits = (canvas.width / 2) / (TILE_ISO_WIDTH / 2);
-    const halfCanvasHeightUnits = (canvas.height / 2) / (TILE_ISO_HEIGHT / 2);
+    // --- Culling for drawing efficiency ---
+    // Calculate visible area in world units based on canvas dimensions and tile size
+    // We add a buffer (e.g., +4) to ensure things near the edge are drawn
+    const visibleWorldWidth = (canvas.width / (TILE_ISO_WIDTH / 2)) + 4;
+    const visibleWorldHeight = (canvas.height / (TILE_ISO_HEIGHT / 2)) + 4;
 
-    const startGridX = Math.max(0, Math.floor(camera.x - halfCanvasWidthUnits) - 2); // Add buffer
-    const endGridX = Math.min(WORLD_UNITS_WIDTH, Math.ceil(camera.x + halfCanvasWidthUnits) + 2);
-    const startGridY = Math.max(0, Math.floor(camera.y - halfCanvasHeightUnits) - 2);
-    const endGridY = Math.min(WORLD_UNITS_HEIGHT, Math.ceil(camera.y + halfCanvasHeightUnits) + 2);
+    const startGridX = Math.max(0, Math.floor(camera.x - visibleWorldWidth / 2));
+    const endGridX = Math.min(WORLD_UNITS_WIDTH, Math.ceil(camera.x + visibleWorldWidth / 2));
+    const startGridY = Math.max(0, Math.floor(camera.y - visibleWorldHeight / 2));
+    const endGridY = Math.min(WORLD_UNITS_HEIGHT, Math.ceil(camera.y + visibleWorldHeight / 2));
 
 
+    // Add Ground Patches to drawables
     for (let y = startGridY; y < endGridY; y++) {
         for (let x = startGridX; x < endGridX; x++) {
             const screenPos = isoToScreen(x, y);
 
-            // Basic check to only draw if within screen bounds (plus some margin)
-            if (screenPos.x > -TILE_ISO_WIDTH * 2 && screenPos.x < canvas.width + TILE_ISO_WIDTH * 2 &&
-                screenPos.y > -TILE_ISO_HEIGHT * 2 && screenPos.y < canvas.height + TILE_ISO_HEIGHT * 2 + MAX_OBJECT_HEIGHT_FROM_GROUND) {
+            // Additional check to only draw if the specific tile is on screen
+            if (screenPos.x + TILE_ISO_WIDTH > 0 && screenPos.x < canvas.width &&
+                screenPos.y + TILE_ISO_HEIGHT + MAX_OBJECT_HEIGHT_FROM_GROUND > 0 && screenPos.y < canvas.height) {
 
                 const biomeType = worldMap[y] ? worldMap[y][x] : 'ground';
                 const tileColors = BIOME_COLORS[biomeType] || BIOME_COLORS['ground'];
@@ -334,20 +327,20 @@ function draw() {
                     isoHeight: TILE_ISO_HEIGHT,
                     colors: tileColors,
                     isWater: isWater,
-                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0
+                    sortY: screenPos.y + TILE_ISO_HEIGHT + 0.0 // Ground patches are the base layer
                 });
             }
         }
     }
 
 
-    // --- Add Trees to drawables ---
+    // Add Trees to drawables
     trees.forEach(tree => {
         const treeScreenPos = isoToScreen(tree.x, tree.y);
 
-        // Simple frustum culling for trees (only draw if roughly within screen bounds)
-        if (treeScreenPos.x > -TILE_ISO_WIDTH * 2 && treeScreenPos.x < canvas.width + TILE_ISO_WIDTH * 2 &&
-            treeScreenPos.y > -MAX_OBJECT_HEIGHT_FROM_GROUND && treeScreenPos.y < canvas.height + TILE_ISO_HEIGHT * 2) {
+        // More robust frustum culling for trees
+        if (treeScreenPos.x + TILE_ISO_WIDTH > 0 && treeScreenPos.x < canvas.width &&
+            treeScreenPos.y + MAX_OBJECT_HEIGHT_FROM_GROUND > 0 && treeScreenPos.y < canvas.height + TILE_ISO_HEIGHT) { // Check if tree base is on screen
 
             const TRUNK_Z_HEIGHT = TILE_ISO_HEIGHT * 2.0;
             const TRUNK_ISO_WIDTH_SCALE = 0.4;
@@ -509,11 +502,10 @@ function gameLoop() {
         // Check for collision with biomes (lake)
         if (worldMap[gridY] && worldMap[gridY][gridX]) {
             const biomeTypeAtNewPos = worldMap[gridY][gridX];
-            if (biomeTypeAtNewPos === 'lake') {
-                collision = true; // Cannot walk on lake
+            if (biomeTypeAtNewPos === 'lake' || biomeTypeAtNewPos === 'mountain') { // Now mountains are also unwalkable
+                collision = true; // Cannot walk on lake or mountain
             } else if (biomeTypeAtNewPos === 'forest') {
                 // Check if there's a specific tree at this forest tile
-                // This is a simplified check for a 'solid' tree tile
                 const treePresent = trees.some(tree => 
                     Math.floor(tree.x) === gridX && 
                     Math.floor(tree.y) === gridY

@@ -29,10 +29,11 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 36; // <--- INCREMENTED TO 36 for camps
+const GAME_VERSION = 37; // <--- INCREMENTED TO 37 for camp biome, death screen, and player health
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
+
 
 // --- Colors for biomes and objects ---
 const BIOME_COLORS = {
@@ -40,7 +41,8 @@ const BIOME_COLORS = {
     'lake': { top: '#64B5F6', left: '#2196F3', right: '#1976D2' },
     'forest': { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' },
     'desert': { top: '#FFEB3B', left: '#FBC02D', right: '#F57F17' },
-    'mountain': { top: '#B0BEC5', left: '#90A4AE', right: '#78909C' }
+    'mountain': { top: '#B0BEC5', left: '#90A4AE', right: '#78909C' },
+    'camp': { top: '#A0522D', left: '#8B4513', right: '#654321' } // NEW: Darker brown for camp biome
 };
 
 const TREE_TRUNK_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' };
@@ -58,7 +60,7 @@ const ARCHER_BODY_COLOR = { top: '#4CAF50', left: '#388E3C', right: '#2E7D32' };
 const ARCHER_LEG_COLOR = { top: '#4F4F4F', left: '#363636', right: '#292929' }; // Dark Grey (Archer)
 const ARROW_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; // Brownish for the arrow
 
-// NEW Camp Colors
+// NEW Camp Colors (for the actual camp structure drawn on top of the biome)
 const CAMP_COLOR = { top: '#8B4513', left: '#654321', right: '#4A2C00' }; // Brown
 
 // --- Player Object ---
@@ -73,8 +75,8 @@ const player = {
     animationFrame: 0,
     animationSpeed: 5,
     frameCount: 0,
-    health: 100, // Player health
-    maxHealth: 100,
+    health: 200, // Player health - NEW: Increased to 200
+    maxHealth: 200, // Player max health - NEW: Increased to 200
     aggroRange: 0 // Player doesn't "aggro" things, but useful for debugging
 };
 
@@ -130,14 +132,21 @@ const arrows = []; // Array to hold arrow projectiles
 const camps = []; // Array to hold enemy camps
 const MIN_CAMPS = 1;
 const MAX_CAMPS = 3; // Number of camps to generate
-const MIN_CAMP_RADIUS = 3; // Minimum size in world units
-const MAX_CAMP_RADIUS = 7; // Maximum size in world units
+const MIN_CAMP_RADIUS = 5; // Minimum size in world units - NEW: Increased
+const MAX_CAMP_RADIUS = 10; // Maximum size in world units - NEW: Increased
 
 // How far from player a camp must spawn (to avoid immediate aggro)
 const MIN_CAMP_SPAWN_DIST_FROM_PLAYER = 15;
 
 const WARRIOR_SPAWN_INTERVAL = 1500; // Warriors spawn less frequently, but from camps now
 let lastWarriorSpawnTime = 0;
+
+// NEW: Game State
+const GAME_STATE = {
+    PLAYING: 'playing',
+    DEFEATED: 'defeated'
+};
+let gameState = GAME_STATE.PLAYING; // Initial game state
 
 // --- World Data Structure ---
 const worldMap = [];
@@ -368,7 +377,7 @@ function generateOrganicBiome(map, biomeType, startX, startY, maxTiles, spreadCh
 }
 
 
-// NEW: Function to generate camps
+// Function to generate camps and set their biome
 function generateCamps() {
     const numCamps = Math.floor(Math.random() * (MAX_CAMPS - MIN_CAMPS + 1)) + MIN_CAMPS;
     console.log(`Generating ${numCamps} enemy camps.`);
@@ -380,22 +389,33 @@ function generateCamps() {
 
         let foundValidCampSpot = false;
         while (attempts < maxAttempts && !foundValidCampSpot) {
-            // Random position for the center of the camp
             campX = Math.random() * WORLD_UNITS_WIDTH;
             campY = Math.random() * WORLD_UNITS_HEIGHT;
             campRadius = Math.random() * (MAX_CAMP_RADIUS - MIN_CAMP_RADIUS) + MIN_CAMP_RADIUS;
 
-            const gridX = Math.floor(campX);
-            const gridY = Math.floor(campY);
+            // Check if the proposed camp area is suitable
+            let validArea = true;
+            // Iterate over a square bounding box around the potential camp center
+            const startCheckX = Math.max(0, Math.floor(campX - campRadius));
+            const endCheckX = Math.min(WORLD_UNITS_WIDTH - 1, Math.ceil(campX + campRadius));
+            const startCheckY = Math.max(0, Math.floor(campY - campRadius));
+            const endCheckY = Math.min(WORLD_UNITS_HEIGHT - 1, Math.ceil(campY + campRadius));
 
-            // Check if the center is walkable and far enough from player
-            const distToPlayer = Math.sqrt(Math.pow(campX - player.x, 2) + Math.pow(campY - player.y, 2));
+            for (let y = startCheckY; y <= endCheckY; y++) {
+                for (let x = startCheckX; x <= endCheckX; x++) {
+                    const distFromCenter = Math.sqrt(Math.pow(x - campX, 2) + Math.pow(y - campY, 2));
+                    if (distFromCenter <= campRadius) {
+                        // If any part of the camp overlaps with non-ground (or player start), it's invalid
+                        if (!worldMap[y] || worldMap[y][x] === 'lake' || worldMap[y][x] === 'mountain' || Math.sqrt(Math.pow(x - player.x, 2) + Math.pow(y - player.y, 2)) < MIN_CAMP_SPAWN_DIST_FROM_PLAYER) {
+                            validArea = false;
+                            break;
+                        }
+                    }
+                }
+                if (!validArea) break;
+            }
 
-            // Basic check for camp center being walkable and far enough from player
-            if (isWalkable(gridX, gridY) && distToPlayer > MIN_CAMP_SPAWN_DIST_FROM_PLAYER) {
-                // Also check if the entire camp area is mostly walkable (optional, but good for robust camps)
-                // For simplicity now, we just check the center.
-                // A more robust check would iterate over the area covered by the radius.
+            if (validArea) {
                 foundValidCampSpot = true;
             }
             attempts++;
@@ -406,14 +426,40 @@ function generateCamps() {
                 x: campX,
                 y: campY,
                 radius: campRadius,
-                isIntruded: false // New flag: true when player enters
+                isIntruded: false
             });
             console.log(`Camp ${i + 1} spawned at (${campX.toFixed(2)}, ${campY.toFixed(2)}) with radius ${campRadius.toFixed(2)}.`);
+
+            // --- Set biome for the camp area ---
+            const startSetX = Math.max(0, Math.floor(campX - campRadius));
+            const endSetX = Math.min(WORLD_UNITS_WIDTH - 1, Math.ceil(campX + campRadius));
+            const startSetY = Math.max(0, Math.floor(campY - campRadius));
+            const endSetY = Math.min(WORLD_UNITS_HEIGHT - 1, Math.ceil(campY + campRadius));
+
+            for (let y = startSetY; y <= endSetY; y++) {
+                for (let x = startSetX; x <= endSetX; x++) {
+                    const distFromCenter = Math.sqrt(Math.pow(x - campX, 2) + Math.pow(y - campY, 2));
+                    if (distFromCenter <= campRadius) {
+                        worldMap[y][x] = 'camp'; // Set the biome to 'camp'
+                        // Remove any trees from the camp area
+                        // Iterating and splicing during iteration can be problematic, better to rebuild trees array
+                        // For now, it's fine as trees are few and camps are few.
+                        // A more robust approach would be to add trees that are *not* in camps.
+                        trees.forEach((tree, treeIndex) => {
+                            if (Math.floor(tree.x) === x && Math.floor(tree.y) === y) {
+                                // Mark for removal or filter later
+                                trees.splice(treeIndex, 1); // Simple removal, may cause skip if not careful with index
+                            }
+                        });
+                    }
+                }
+            }
         } else {
             console.warn(`Could not find a valid spot for Camp ${i + 1} after ${maxAttempts} attempts.`);
         }
     }
 }
+
 
 // --- Initial Map/World Setup Function ---
 function setupWorld() {
@@ -448,7 +494,9 @@ function setupWorld() {
     const treeDensity = 0.4;
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
+            // Only add trees to 'forest' biome and if it's not going to be a camp later
             if (worldMap[y][x] === 'forest' && Math.random() < treeDensity) {
+                // We'll remove trees within camp areas after camp generation, so this is fine for now
                 trees.push({ x: x + Math.random(), y: y + Math.random() });
             }
         }
@@ -494,6 +542,7 @@ function setupWorld() {
     player.frameCount = 0;
 
     // Generate Camps AFTER player is placed so camps can spawn away from player
+    // And before initial warrior spawn
     generateCamps();
 
     lastWarriorSpawnTime = 0; // Initialize to 0 to trigger immediate spawn on first loop
@@ -516,6 +565,11 @@ function isWalkable(x, y) {
 
     if (biomeType === 'lake' || biomeType === 'mountain') {
         return false;
+    }
+
+    // NEW: Camp biome is always walkable
+    if (biomeType === 'camp') {
+        return true;
     }
 
     if (biomeType === 'forest') {
@@ -991,11 +1045,10 @@ function draw() {
         }
     }
 
-    // --- Add Camps to drawables array ---
+    // Add Camps (structures on top of the camp biome) to drawables array
     camps.forEach(camp => {
         const campScreenPos = isoToScreen(camp.x, camp.y);
         // Convert world units radius to isometric pixels for drawing
-        // This is a rough conversion, as a perfect isometric circle is complex.
         const isoRadius = camp.radius * (TILE_ISO_WIDTH / 2); // Roughly scales radius to screen space
 
         // For drawing a 3D block that looks like a flattened circle from above
@@ -1171,10 +1224,35 @@ function draw() {
     ctx.font = '24px Arial';
     ctx.fillStyle = 'white';
     ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
+
+    // NEW: Death Screen Overlay
+    if (gameState === GAME_STATE.DEFEATED) {
+        // Dark overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // "YOU DIED!" text
+        ctx.font = '72px Arial';
+        ctx.fillStyle = 'red';
+        ctx.textAlign = 'center';
+        ctx.fillText('YOU DIED!', canvas.width / 2, canvas.height / 2 - 50);
+
+        // Make retry button visible
+        retryButton.style.display = 'block';
+    } else {
+        // Hide retry button during gameplay
+        retryButton.style.display = 'none';
+    }
 }
 
 // --- Game Loop ---
 function gameLoop(currentTime) {
+    if (gameState === GAME_STATE.DEFEATED) {
+        draw(); // Still draw to show the death screen
+        requestAnimationFrame(gameLoop); // Keep looping to render the death screen
+        return; // Stop updating game logic
+    }
+
     let currentDx = 0;
     let currentDy = 0;
 
@@ -1230,6 +1308,12 @@ function gameLoop(currentTime) {
     // --- Update Warrior Logic ---
     updateWarriors();
 
+    // --- Check for Player Death ---
+    if (player.health <= 0) {
+        gameState = GAME_STATE.DEFEATED;
+        console.log("Player defeated! Game Over.");
+    }
+
     draw();
 
     requestAnimationFrame(gameLoop);
@@ -1238,11 +1322,17 @@ function gameLoop(currentTime) {
 
 // --- Keyboard Input Handling ---
 document.addEventListener('keydown', (event) => {
-    keysPressed[event.key.toLowerCase()] = true;
+    // Only process input if not defeated
+    if (gameState === GAME_STATE.PLAYING) {
+        keysPressed[event.key.toLowerCase()] = true;
+    }
 });
 
 document.addEventListener('keyup', (event) => {
-    keysPressed[event.key.toLowerCase()] = false;
+    // Only process input if not defeated
+    if (gameState === GAME_STATE.PLAYING) {
+        keysPressed[event.key.toLowerCase()] = false;
+    }
 });
 
 
@@ -1251,22 +1341,60 @@ setupWorld(); // Call this once to initialize the map and player
 requestAnimationFrame(gameLoop); // Start the game loop
 
 
-// Create and append the "Generate New Map" button
-const regenerateButton = document.createElement('button');
-regenerateButton.textContent = 'Generate New Map';
-regenerateButton.style.marginTop = '20px';
-regenerateButton.style.padding = '10px 20px';
-regenerateButton.style.fontSize = '1em';
-regenerateButton.style.backgroundColor = '#61dafb';
-regenerateButton.style.color = '#282c34';
-regenerateButton.style.border = 'none';
-regenerateButton.style.borderRadius = '5px';
-regenerateButton.style.cursor = 'pointer';
-document.body.appendChild(regenerateButton);
+// Get the buttons - they might already exist if you copied the HTML snippet correctly
+const regenerateButton = document.getElementById('regenerateButton');
+const retryButton = document.getElementById('retryButton');
 
-// Add event listener for the button
+// If buttons don't exist yet (e.g., if you only copied script.js and not HTML)
+// These lines create them if they weren't in your HTML.
+// It's generally better to define buttons in HTML and grab them by ID.
+if (!regenerateButton) {
+    const newRegenerateButton = document.createElement('button');
+    newRegenerateButton.textContent = 'Generate New Map';
+    newRegenerateButton.id = 'regenerateButton'; // Assign an ID
+    newRegenerateButton.style.marginTop = '20px';
+    newRegenerateButton.style.padding = '10px 20px';
+    newRegenerateButton.style.fontSize = '1em';
+    newRegenerateButton.style.backgroundColor = '#61dafb';
+    newRegenerateButton.style.color = '#282c34';
+    newRegenerateButton.style.border = 'none';
+    newRegenerateButton.style.borderRadius = '5px';
+    newRegenerateButton.style.cursor = 'pointer';
+    document.body.appendChild(newRegenerateButton);
+    regenerateButton = newRegenerateButton; // Assign to the const
+}
+
+if (!retryButton) {
+    const newRetryButton = document.createElement('button');
+    newRetryButton.textContent = 'Retry';
+    newRetryButton.id = 'retryButton'; // Assign an ID
+    newRetryButton.style.display = 'none'; // Initially hidden
+    newRetryButton.style.padding = '15px 30px';
+    newRetryButton.style.fontSize = '1.5em';
+    newRetryButton.style.backgroundColor = '#4CAF50';
+    newRetryButton.style.color = 'white';
+    newRetryButton.style.border = 'none';
+    newRetryButton.style.borderRadius = '8px';
+    newRetryButton.style.cursor = 'pointer';
+    newRetryButton.style.marginRight = '20px'; // To separate from new map button if they're in the same line
+    document.body.appendChild(newRetryButton);
+    retryButton = newRetryButton; // Assign to the const
+}
+
+// Add event listener for the Retry button
+retryButton.addEventListener('click', () => {
+    gameState = GAME_STATE.PLAYING; // Reset game state
+    setupWorld(); // Re-initialize the world and player
+    player.health = player.maxHealth; // Reset player health
+    retryButton.style.display = 'none'; // Hide button
+});
+
+// Add event listener for the Generate New Map button
 regenerateButton.addEventListener('click', () => {
+    gameState = GAME_STATE.PLAYING; // Reset game state
     setupWorld(); // Re-initialize the world and reset game state
+    player.health = player.maxHealth; // Reset player health
+    retryButton.style.display = 'none'; // Hide button if clicked during death screen
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;

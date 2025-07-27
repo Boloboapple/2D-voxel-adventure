@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 38; // <--- INCREMENTED TO 38 for button/movement fixes
+const GAME_VERSION = 39; // <--- INCREMENTED TO 39 for UI positioning fixes
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -1229,21 +1229,31 @@ function draw() {
     });
 
     // --- Draw UI Elements (Health, Version) ---
-    // Player Health Bar
-    ctx.fillStyle = 'black';
-    ctx.fillRect(10, 50, 150, 20); // Background for health bar
-    const healthBarWidth = (player.health / player.maxHealth) * 148;
-    ctx.fillStyle = 'red';
-    ctx.fillRect(11, 51, healthBarWidth, 18);
-    ctx.font = '16px Arial';
-    ctx.fillStyle = 'white';
-    ctx.fillText(`HP: ${player.health}/${player.maxHealth}`, 170, 66);
 
-
-    // Version Number
+    // Version Number - Adjusted Positioning
     ctx.font = '24px Arial';
     ctx.fillStyle = 'white';
-    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30);
+    ctx.textAlign = 'left'; // Align text to the left
+    ctx.fillText(`Version: ${GAME_VERSION}`, 10, 30); // X: 10, Y: 30
+
+    // Player Health Bar - Adjusted Positioning
+    const healthBarX = 10;
+    const healthBarY = 60; // Moved down to avoid version number
+    const healthBarWidth = 150;
+    const healthBarHeight = 20;
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(healthBarX, healthBarY, healthBarWidth, healthBarHeight); // Background for health bar
+    const currentHealthWidth = (player.health / player.maxHealth) * (healthBarWidth - 2); // -2 for 1px border on each side
+    ctx.fillStyle = 'red';
+    ctx.fillRect(healthBarX + 1, healthBarY + 1, currentHealthWidth, healthBarHeight - 2); // Inner health bar
+
+    // Health Text - Adjusted Positioning and alignment
+    ctx.font = '16px Arial';
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'left'; // Ensure text is left-aligned
+    // Position the text to the right of the health bar, slightly offset
+    ctx.fillText(`HP: ${player.health}/${player.maxHealth}`, healthBarX + healthBarWidth + 10, healthBarY + healthBarHeight / 2 + 6); // +6 to roughly center vertically
 
     // NEW: Death Screen Overlay
     if (gameState === GAME_STATE.DEFEATED) {

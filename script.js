@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 37; // <--- INCREMENTED TO 37 for camp biome, death screen, and player health
+const GAME_VERSION = 38; // <--- INCREMENTED TO 38 for button/movement fixes
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -234,7 +234,15 @@ function drawCharacter(character, screenPos, sortY) {
         else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
         else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
+    } else if (character.isMoving && character.type === 'player') { // Player movement animation
+        const frame = character.animationFrame;
+        const liftAmount = TILE_ISO_HEIGHT * 0.08;
+        if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
+        else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
+        else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
     }
+
 
     // Legs
     drawables.push({
@@ -445,12 +453,13 @@ function generateCamps() {
                         // Iterating and splicing during iteration can be problematic, better to rebuild trees array
                         // For now, it's fine as trees are few and camps are few.
                         // A more robust approach would be to add trees that are *not* in camps.
-                        trees.forEach((tree, treeIndex) => {
+                        // This splice approach works but is not ideal for large arrays, for this game it's fine.
+                        for(let t = trees.length - 1; t >= 0; t--) {
+                            const tree = trees[t];
                             if (Math.floor(tree.x) === x && Math.floor(tree.y) === y) {
-                                // Mark for removal or filter later
-                                trees.splice(treeIndex, 1); // Simple removal, may cause skip if not careful with index
+                                trees.splice(t, 1);
                             }
-                        });
+                        }
                     }
                 }
             }
@@ -463,6 +472,7 @@ function generateCamps() {
 
 // --- Initial Map/World Setup Function ---
 function setupWorld() {
+    // Clear existing map and objects
     for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
         worldMap[y] = [];
         for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
@@ -491,17 +501,6 @@ function setupWorld() {
         }
     });
 
-    const treeDensity = 0.4;
-    for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
-        for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
-            // Only add trees to 'forest' biome and if it's not going to be a camp later
-            if (worldMap[y][x] === 'forest' && Math.random() < treeDensity) {
-                // We'll remove trees within camp areas after camp generation, so this is fine for now
-                trees.push({ x: x + Math.random(), y: y + Math.random() });
-            }
-        }
-    }
-
     // Place player at a valid starting position
     player.x = WORLD_UNITS_WIDTH / 2;
     player.y = WORLD_UNITS_HEIGHT / 2;
@@ -510,18 +509,17 @@ function setupWorld() {
     let playerGridX = Math.floor(player.x);
     let playerGridY = Math.floor(player.y);
 
-    if (worldMap[playerGridY] && (worldMap[playerGridY][playerGridX] !== 'ground')) {
+    // If initial player position is not walkable, find a nearby walkable spot
+    if (!isWalkable(playerGridX, playerGridY)) {
         let foundGround = false;
         for (let radius = 1; radius < Math.max(WORLD_UNITS_WIDTH, WORLD_UNITS_HEIGHT); radius++) {
             for (let dy = -radius; dy <= radius; dy++) {
                 for (let dx = -radius; dx <= radius; dx++) {
-                    if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+                    if (Math.abs(dx) === radius || Math.abs(dy) === radius) { // Check only the perimeter of the square
                         const checkX = Math.floor(player.x) + dx;
                         const checkY = Math.floor(player.y) + dy;
-                        if (checkX >= 0 && checkX < WORLD_UNITS_WIDTH &&
-                            checkY >= 0 && checkY < WORLD_UNITS_HEIGHT &&
-                            worldMap[checkY][checkX] === 'ground') {
-                            player.x = checkX + 0.5;
+                        if (isWalkable(checkX, checkY)) {
+                            player.x = checkX + 0.5; // Center player in the tile
                             player.y = checkY + 0.5;
                             foundGround = true;
                             break;
@@ -534,6 +532,7 @@ function setupWorld() {
         }
     }
 
+
     camera.x = player.x;
     camera.y = player.y;
 
@@ -542,8 +541,29 @@ function setupWorld() {
     player.frameCount = 0;
 
     // Generate Camps AFTER player is placed so camps can spawn away from player
-    // And before initial warrior spawn
     generateCamps();
+
+    // Now add trees, making sure they are not in camp areas
+    const treeDensity = 0.4;
+    for (let y = 0; y < WORLD_UNITS_HEIGHT; y++) {
+        for (let x = 0; x < WORLD_UNITS_WIDTH; x++) {
+            // Only add trees to 'forest' biome AND if it's not a 'camp' biome AND random chance
+            if (worldMap[y][x] === 'forest' && Math.random() < treeDensity) {
+                // Check if this tile is inside any generated camp radius
+                let isInCamp = false;
+                for (const camp of camps) {
+                    const distFromCampCenter = Math.sqrt(Math.pow(x - camp.x, 2) + Math.pow(y - camp.y, 2));
+                    if (distFromCampCenter <= camp.radius) {
+                        isInCamp = true;
+                        break;
+                    }
+                }
+                if (!isInCamp) {
+                    trees.push({ x: x + Math.random(), y: y + Math.random() });
+                }
+            }
+        }
+    }
 
     lastWarriorSpawnTime = 0; // Initialize to 0 to trigger immediate spawn on first loop
 }
@@ -591,7 +611,7 @@ function spawnWarrior() {
     }
 
     if (camps.length === 0) {
-        console.warn("No enemy camps available to spawn warriors. Preventing spawn.");
+        // console.warn("No enemy camps available to spawn warriors. Preventing spawn.");
         return; // No camps, no warrior spawns
     }
 
@@ -608,7 +628,7 @@ function spawnWarrior() {
     while (attempts < maxAttempts && !foundValidSpot) {
         // Random angle and distance from camp center within radius
         const angle = Math.random() * Math.PI * 2;
-        const distFromCenter = Math.random() * targetCamp.radius;
+        const distFromCenter = Math.random() * targetCamp.radius * 0.8; // Spawn a bit inwards from edge
 
         spawnX = targetCamp.x + Math.cos(angle) * distFromCenter;
         spawnY = targetCamp.y + Math.sin(angle) * distFromCenter;
@@ -623,7 +643,7 @@ function spawnWarrior() {
     }
 
     if (!foundValidSpot) {
-        console.warn(`Could not find suitable spawn location within camp at (${targetCamp.x.toFixed(2)}, ${targetCamp.y.toFixed(2)}) for warrior after ${maxAttempts} attempts.`);
+        // console.warn(`Could not find suitable spawn location within camp at (${targetCamp.x.toFixed(2)}, ${targetCamp.y.toFixed(2)}) for warrior after ${maxAttempts} attempts.`);
         return;
     }
 
@@ -659,7 +679,7 @@ function spawnWarrior() {
             campId: targetCampIndex, // Link warrior to its camp
             isFreed: targetCamp.isIntruded // If camp is already intruded, warrior is free
         };
-        console.log(`SUCCESS: Archer spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}) in Camp ${targetCampIndex}. Total warriors: ${warriors.length}`);
+        // console.log(`SUCCESS: Archer spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}) in Camp ${targetCampIndex}. Total warriors: ${warriors.length}`);
     } else {
         newWarrior = {
             x: spawnX,
@@ -687,7 +707,7 @@ function spawnWarrior() {
             campId: targetCampIndex, // Link warrior to its camp
             isFreed: targetCamp.isIntruded // If camp is already intruded, warrior is free
         };
-        console.log(`SUCCESS: Melee warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}) in Camp ${targetCampIndex}. Total warriors: ${warriors.length}`);
+        // console.log(`SUCCESS: Melee warrior spawned at (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)}) in Camp ${targetCampIndex}. Total warriors: ${warriors.length}`);
     }
 
     warriors.push(newWarrior);
@@ -741,7 +761,7 @@ function updateWarriors() {
             if (warrior.state === WARRIOR_STATE.IDLE) {
                 if (distToPlayer <= warrior.aggroRange || warrior.isFreed) { // If freed, they'll chase
                     warrior.state = WARRIOR_STATE.CHASING;
-                    console.log(`Melee Warrior ${index} now CHASING player.`);
+                    // console.log(`Melee Warrior ${index} now CHASING player.`);
                 }
             } else if (warrior.state === WARRIOR_STATE.CHASING) {
                 if (distToPlayer <= warrior.attackRange && currentTime - warrior.lastAttackTime > warrior.attackCooldown) {
@@ -750,17 +770,17 @@ function updateWarriors() {
                     warrior.isAttacking = true;
                     warrior.attackAnimationFrame = 0;
                     warrior.attackFrameCount = 0;
-                    console.log(`Melee Warrior ${index} now ATTACKING player!`);
+                    // console.log(`Melee Warrior ${index} now ATTACKING player!`);
                 } else if (!warrior.isFreed && distToPlayer > warrior.aggroRange * 1.5) { // Only go idle if not freed and player far
                     warrior.state = WARRIOR_STATE.IDLE;
-                    console.log(`Melee Warrior ${index} is now IDLE (player too far while chasing).`);
+                    // console.log(`Melee Warrior ${index} is now IDLE (player too far while chasing).`);
                     warrior.targetX = null;
                     warrior.targetY = null;
                 }
             } else if (warrior.state === WARRIOR_STATE.ATTACKING) {
                 if (!warrior.isAttacking) { // This means the attack animation sequence completed
                     warrior.state = WARRIOR_STATE.CHASING;
-                    console.log(`Melee Warrior ${index} attack animation finished, now re-evaluating (CHASING).`);
+                    // console.log(`Melee Warrior ${index} attack animation finished, now re-evaluating (CHASING).`);
                 }
             }
 
@@ -822,7 +842,7 @@ function updateWarriors() {
                         // Apply damage only once per attack animation cycle
                         if (player.health > 0) { // Don't damage if player is already dead
                             player.health = Math.max(0, player.health - warrior.attackDamage);
-                            console.log(`Player hit by melee warrior ${index}! Health: ${player.health}`);
+                            // console.log(`Player hit by melee warrior ${index}! Health: ${player.health}`);
                         }
                         warrior.lastAttackTime = currentTime; // Reset cooldown after damage is dealt
                     }
@@ -912,7 +932,7 @@ function updateWarriors() {
                 if (distToPlayer <= warrior.aggroRange || warrior.isFreed) { // If freed, they'll always try to aggro
                     warrior.state = WARRIOR_STATE.AIMING;
                     warrior.aimProgress = 0;
-                    console.log(`Archer ${index} is now AIMING at player.`);
+                    // console.log(`Archer ${index} is now AIMING at player.`);
                 }
             } else if (warrior.state === WARRIOR_STATE.AIMING || warrior.state === WARRIOR_STATE.SHOOTING) {
                 // If player leaves aggro range AND archer is not freed (still confined to camp)
@@ -920,7 +940,7 @@ function updateWarriors() {
                     warrior.state = WARRIOR_STATE.IDLE;
                     warrior.aimProgress = 0;
                     warrior.isAttacking = false;
-                    console.log(`Archer ${index} stopped AIMING (player out of range).`);
+                    // console.log(`Archer ${index} stopped AIMING (player out of range).`);
                 } else if (currentTime - warrior.lastAttackTime > warrior.attackCooldown) {
                     // If cooldown is ready and player is in range (or warrior is freed)
                     warrior.state = WARRIOR_STATE.AIMING;
@@ -959,9 +979,9 @@ function updateWarriors() {
                             dy: arrowDy,
                             damage: warrior.attackDamage,
                         });
-                        console.log(`Archer ${index} SHOT an arrow!`);
+                        // console.log(`Archer ${index} SHOT an arrow!`);
                     } else {
-                        console.log(`Archer ${index} MISSED the shot.`);
+                        // console.log(`Archer ${index} MISSED the shot.`);
                     }
                     warrior.lastAttackTime = currentTime;
                     warrior.isAttacking = false;
@@ -979,7 +999,7 @@ function updateWarriors() {
         // Remove dead warriors
         if (warrior.health <= 0) {
             warriors.splice(index, 1);
-            console.log(`Warrior ${index} defeated! Remaining warriors: ${warriors.length}`);
+            // console.log(`Warrior ${index} defeated! Remaining warriors: ${warriors.length}`);
         }
     });
 
@@ -993,7 +1013,7 @@ function updateWarriors() {
         if (arrowDistToPlayer < 0.5) {
             if (player.health > 0) {
                 player.health = Math.max(0, player.health - arrow.damage);
-                console.log(`Player hit by arrow! Health: ${player.health}`);
+                // console.log(`Player hit by arrow! Health: ${player.health}`);
             }
             arrows.splice(index, 1);
         }
@@ -1096,7 +1116,7 @@ function draw() {
             const leavesTopScreenY = trunkTopScreenY - LEAVES_Z_HEIGHT + (TILE_ISO_HEIGHT * TRUNK_ISO_HEIGHT_SCALE / 2);
 
             const treeBaseScreenY = treeScreenPos.y + TILE_ISO_HEIGHT + TRUNK_Z_HEIGHT;
-            
+
             drawables.push({
                 type: 'treeTrunk',
                 x: tree.x, y: tree.y,
@@ -1148,7 +1168,7 @@ function draw() {
             }
             ctx.strokeStyle = aggroColor;
             ctx.beginPath();
-            const aggroRangeScreen = warrior.aggroRange * (TILE_ISO_WIDTH / 2) * 1.5; 
+            const aggroRangeScreen = warrior.aggroRange * (TILE_ISO_WIDTH / 2) * 1.5;
             ctx.arc(warriorScreenPos.x + TILE_ISO_WIDTH / 2, warriorScreenPos.y + TILE_ISO_HEIGHT / 2, aggroRangeScreen, 0, Math.PI * 2);
             ctx.stroke();
 
@@ -1237,11 +1257,16 @@ function draw() {
         ctx.textAlign = 'center';
         ctx.fillText('YOU DIED!', canvas.width / 2, canvas.height / 2 - 50);
 
-        // Make retry button visible
-        retryButton.style.display = 'block';
+        // This makes the retry button visible *if it exists and is grabbed by ID*
+        // The script now assumes the buttons are already in HTML
+        if (retryButton) {
+            retryButton.style.display = 'block';
+        }
     } else {
         // Hide retry button during gameplay
-        retryButton.style.display = 'none';
+        if (retryButton) {
+            retryButton.style.display = 'none';
+        }
     }
 }
 
@@ -1256,6 +1281,7 @@ function gameLoop(currentTime) {
     let currentDx = 0;
     let currentDy = 0;
 
+    // IMPORTANT: Make sure these keys are actually getting 'true' when pressed
     if (keysPressed['w']) {
         currentDy -= 1;
     }
@@ -1278,10 +1304,23 @@ function gameLoop(currentTime) {
     let potentialNewPlayerX = player.x + currentDx * player.moveSpeed;
     let potentialNewPlayerY = player.y + currentDy * player.moveSpeed;
 
+    // Check walkability for the proposed new position
     if (isWalkable(potentialNewPlayerX, potentialNewPlayerY)) {
         player.x = potentialNewPlayerX;
         player.y = potentialNewPlayerY;
     }
+    // If diagonal is blocked, try moving along one axis
+    else {
+        // Try moving horizontally
+        if (isWalkable(potentialNewPlayerX, player.y)) {
+            player.x = potentialNewPlayerX;
+        }
+        // Try moving vertically
+        else if (isWalkable(player.x, potentialNewPlayerY)) {
+            player.y = potentialNewPlayerY;
+        }
+    }
+
 
     player.isMoving = (currentDx !== 0 || currentDy !== 0);
 
@@ -1341,61 +1380,50 @@ setupWorld(); // Call this once to initialize the map and player
 requestAnimationFrame(gameLoop); // Start the game loop
 
 
-// Get the buttons - they might already exist if you copied the HTML snippet correctly
+// Get the buttons - they MUST exist in the HTML for this to work
 const regenerateButton = document.getElementById('regenerateButton');
 const retryButton = document.getElementById('retryButton');
 
-// If buttons don't exist yet (e.g., if you only copied script.js and not HTML)
-// These lines create them if they weren't in your HTML.
-// It's generally better to define buttons in HTML and grab them by ID.
-if (!regenerateButton) {
-    const newRegenerateButton = document.createElement('button');
-    newRegenerateButton.textContent = 'Generate New Map';
-    newRegenerateButton.id = 'regenerateButton'; // Assign an ID
-    newRegenerateButton.style.marginTop = '20px';
-    newRegenerateButton.style.padding = '10px 20px';
-    newRegenerateButton.style.fontSize = '1em';
-    newRegenerateButton.style.backgroundColor = '#61dafb';
-    newRegenerateButton.style.color = '#282c34';
-    newRegenerateButton.style.border = 'none';
-    newRegenerateButton.style.borderRadius = '5px';
-    newRegenerateButton.style.cursor = 'pointer';
-    document.body.appendChild(newRegenerateButton);
-    regenerateButton = newRegenerateButton; // Assign to the const
-}
-
-if (!retryButton) {
-    const newRetryButton = document.createElement('button');
-    newRetryButton.textContent = 'Retry';
-    newRetryButton.id = 'retryButton'; // Assign an ID
-    newRetryButton.style.display = 'none'; // Initially hidden
-    newRetryButton.style.padding = '15px 30px';
-    newRetryButton.style.fontSize = '1.5em';
-    newRetryButton.style.backgroundColor = '#4CAF50';
-    newRetryButton.style.color = 'white';
-    newRetryButton.style.border = 'none';
-    newRetryButton.style.borderRadius = '8px';
-    newRetryButton.style.cursor = 'pointer';
-    newRetryButton.style.marginRight = '20px'; // To separate from new map button if they're in the same line
-    document.body.appendChild(newRetryButton);
-    retryButton = newRetryButton; // Assign to the const
-}
-
 // Add event listener for the Retry button
-retryButton.addEventListener('click', () => {
-    gameState = GAME_STATE.PLAYING; // Reset game state
-    setupWorld(); // Re-initialize the world and player
-    player.health = player.maxHealth; // Reset player health
-    retryButton.style.display = 'none'; // Hide button
-});
+if (retryButton) { // Ensure button exists before adding listener
+    retryButton.addEventListener('click', () => {
+        gameState = GAME_STATE.PLAYING; // Reset game state
+        setupWorld(); // Re-initialize the world and player
+        player.health = player.maxHealth; // Reset player health
+        retryButton.style.display = 'none'; // Hide button
+        // Reset player movement state
+        player.isMoving = false;
+        player.animationFrame = 0;
+        player.frameCount = 0;
+        // Clear pressed keys so player doesn't instantly move if a key was held down
+        for (const key in keysPressed) {
+            keysPressed[key] = false;
+        }
+        console.log("Retry button clicked. Game reset.");
+    });
+} else {
+    console.error("Error: 'retryButton' element not found! Make sure it exists in index.html with id='retryButton'.");
+}
 
 // Add event listener for the Generate New Map button
-regenerateButton.addEventListener('click', () => {
-    gameState = GAME_STATE.PLAYING; // Reset game state
-    setupWorld(); // Re-initialize the world and reset game state
-    player.health = player.maxHealth; // Reset player health
-    retryButton.style.display = 'none'; // Hide button if clicked during death screen
-    player.isMoving = false;
-    player.animationFrame = 0;
-    player.frameCount = 0;
-});
+if (regenerateButton) { // Ensure button exists before adding listener
+    regenerateButton.addEventListener('click', () => {
+        gameState = GAME_STATE.PLAYING; // Reset game state
+        setupWorld(); // Re-initialize the world and reset game state
+        player.health = player.maxHealth; // Reset player health
+        if (retryButton) { // Hide retry button if clicked during death screen
+            retryButton.style.display = 'none';
+        }
+        // Reset player movement state
+        player.isMoving = false;
+        player.animationFrame = 0;
+        player.frameCount = 0;
+        // Clear pressed keys so player doesn't instantly move if a key was held down
+        for (const key in keysPressed) {
+            keysPressed[key] = false;
+        }
+        console.log("Generate New Map button clicked. Game reset.");
+    });
+} else {
+    console.error("Error: 'regenerateButton' element not found! Make sure it exists in index.html with id='regenerateButton'.");
+}

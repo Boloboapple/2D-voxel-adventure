@@ -3,14 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2D Voxel Adventure</title>
+    <title>Isometric Map Game</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #282c34; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-        canvas { border: 1px solid #61dafb; image-rendering: pixelated; /* For sharper low-res graphics */ }
+        body {
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            background-color: #282c34; /* Dark background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column; /* Arrange items vertically */
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        canvas {
+            border: 2px solid #61dafb; /* Light blue border */
+            background-color: #000;
+            display: block; /* Remove extra space below canvas */
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex; /* Arrange buttons side-by-side */
+            gap: 20px; /* Space between buttons */
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #61dafb;
+            color: #282c34;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        button:hover {
+            background-color: #21a1f1;
+        }
+        /* Specific style for Retry button */
+        #retryButton {
+            display: none; /* Hidden by default, shown by JS */
+            padding: 15px 30px;
+            font-size: 1.5em;
+            background-color: #4CAF50; /* Green */
+            color: white;
+            border-radius: 8px;
+            margin-right: 20px; /* Space from Regenerate button */
+        }
+        #retryButton:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 <body>
+
+    <h1>Isometric Game</h1>
     <canvas id="gameCanvas"></canvas>
-    <script src="script.js?v=37"></script>
+
+    <div class="controls">
+        <button id="retryButton">Retry</button>
+        <button id="regenerateButton">Generate New Map</button>
+    </div>
+
+    <script src="script.js?v=38"></script>
 </body>
 </html>

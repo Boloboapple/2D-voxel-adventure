@@ -29,7 +29,7 @@ console.log(`Initial Global Draw Offset: X=${initialGlobalDrawOffsetX}, Y=${init
 
 // --- GAME VERSION COUNTER ---
 // IMPORTANT: INCREMENT THIS NUMBER EACH TIME YOU MAKE A CHANGE AND PUSH!
-const GAME_VERSION = 39; // <--- INCREMENTED TO 39 for UI positioning fixes
+const GAME_VERSION = 40; // <--- INCREMENTED TO 40 for attack/shoot system
 console.log("------------------------------------------");
 console.log(`>>> Game Version: ${GAME_VERSION} <<<`); // This will confirm load
 console.log("------------------------------------------");
@@ -63,6 +63,11 @@ const ARROW_COLOR = { top: '#A1887F', left: '#8D6E63', right: '#795548' }; // Br
 // NEW Camp Colors (for the actual camp structure drawn on top of the biome)
 const CAMP_COLOR = { top: '#8B4513', left: '#654321', right: '#4A2C00' }; // Brown
 
+// NEW: Player weapon colors
+const PLAYER_MELEE_WEAPON_COLOR = STICK_COLOR;
+const PLAYER_BOW_COLOR = STICK_COLOR;
+const PLAYER_ARROW_COLOR = { top: '#FFD700', left: '#DAA520', right: '#B8860B' }; // Gold arrow
+
 // --- Player Object ---
 const player = {
     x: WORLD_UNITS_WIDTH / 2,
@@ -77,7 +82,24 @@ const player = {
     frameCount: 0,
     health: 200, // Player health - NEW: Increased to 200
     maxHealth: 200, // Player max health - NEW: Increased to 200
-    aggroRange: 0 // Player doesn't "aggro" things, but useful for debugging
+    aggroRange: 0, // Player doesn't "aggro" things, but useful for debugging
+    // NEW PLAYER ATTACK/SHOOT PROPERTIES
+    isAttacking: false, // Player melee attack
+    attackAnimationFrame: 0,
+    attackFrameCount: 0,
+    attackDamage: 50, // Melee damage
+    attackRange: 1.0, // World units
+    attackCooldown: 500, // Milliseconds (0.5 seconds)
+    lastAttackTime: 0,
+
+    isAiming: false, // For bow shot
+    aimProgress: 0,
+    isShooting: false, // Flag that an arrow is about to be fired
+    shootDamage: 50, // Bow damage
+    shootRange: 10, // World units (longer than melee)
+    shootCooldown: 1000, // Milliseconds (1 second)
+    lastShootTime: 0,
+    targetEnemy: null // Store the closest target for shooting
 };
 
 // Define character dimensions relative to tile size
@@ -104,7 +126,7 @@ const MAX_WARRIORS = 50;
 const WARRIOR_AGGRO_RANGE = 5; // Distance in world units for player detection (Melee)
 const WARRIOR_MOVE_SPEED = 0.03; // Warriors move slightly slower than player
 const WARRIOR_IDLE_MOVE_CHANCE = 0.02; // Chance per frame for idle warrior to move
-const WARRIOR_HEALTH = 50; // Warrior health
+const WARRIOR_HEALTH = 150; // <--- CHANGED: Warrior health
 
 // Warrior states
 const WARRIOR_STATE = {
@@ -234,7 +256,7 @@ function drawCharacter(character, screenPos, sortY) {
         else if (frame === 1) { animOffsetA = 0; animOffsetB = -liftAmount; }
         else if (frame === 2) { animOffsetA = -liftAmount; animOffsetB = 0; }
         else if (frame === 3) { animOffsetA = 0; animOffsetB = -liftAmount; }
-    } else if (character.isMoving && character.type === 'player') { // Player movement animation
+    } else if (character.isMoving && character.type === 'player' && !character.isAttacking && !character.isAiming) { // Player movement animation
         const frame = character.animationFrame;
         const liftAmount = TILE_ISO_HEIGHT * 0.08;
         if (frame === 0) { animOffsetA = -liftAmount; animOffsetB = 0; }
@@ -283,8 +305,9 @@ function drawCharacter(character, screenPos, sortY) {
     });
 
     // --- Draw Attack Weapon/Visual for each type ---
-    if (character.isAttacking) {
-        if (character.type === 'melee') {
+    // If character is attacking OR it's the player and they are aiming
+    if (character.isAttacking || (character.type === 'player' && character.isAiming)) {
+        if (character.type === 'melee') { // For enemy melee warriors
             let stickOffsetIsoX = 0;
             let stickOffsetIsoY = 0;
             let stickHeight = TILE_ISO_HEIGHT * 0.7;
@@ -314,10 +337,10 @@ function drawCharacter(character, screenPos, sortY) {
                 zHeight: stickHeight,
                 isoWidth: stickWidth,
                 isoHeight: stickWidth / 2,
-                colors: STICK_COLOR,
+                colors: STICK_COLOR, // Enemy melee weapon color
                 sortY: sortY + 0.004
             });
-        } else if (character.type === 'archer') {
+        } else if (character.type === 'archer') { // For enemy archer warriors
             // Simple visual for archer holding a bow during "aiming"
             let bowHeight = TILE_ISO_HEIGHT * 0.8;
             let bowWidth = TILE_ISO_WIDTH * 0.2;
@@ -332,7 +355,57 @@ function drawCharacter(character, screenPos, sortY) {
                 zHeight: bowHeight,
                 isoWidth: bowWidth,
                 isoHeight: bowWidth / 2,
-                colors: STICK_COLOR,
+                colors: STICK_COLOR, // Enemy bow color
+                sortY: sortY + 0.004
+            });
+        } else if (character.type === 'player' && character.isAttacking) { // NEW: Player Melee
+            let playerStickOffsetIsoX = 0;
+            let playerStickOffsetIsoY = 0;
+            let playerStickHeight = TILE_ISO_HEIGHT * 0.7;
+            let playerStickWidth = TILE_ISO_WIDTH * 0.15;
+
+            const attackFrame = character.attackAnimationFrame;
+
+            if (attackFrame === 0) {
+                playerStickOffsetIsoX = TILE_ISO_WIDTH * 0.25;
+                playerStickOffsetIsoY = -TILE_ISO_HEIGHT * 0.05;
+            } else if (attackFrame === 1) {
+                playerStickOffsetIsoX = TILE_ISO_WIDTH * 0.1;
+                playerStickOffsetIsoY = TILE_ISO_HEIGHT * 0.05;
+            } else if (attackFrame === 2) {
+                playerStickOffsetIsoX = TILE_ISO_WIDTH * 0.0;
+                playerStickOffsetIsoY = TILE_ISO_HEIGHT * 0.1;
+            } else if (attackFrame === 3) {
+                playerStickOffsetIsoX = TILE_ISO_WIDTH * 0.15;
+                playerStickOffsetIsoY = TILE_ISO_HEIGHT * 0.0;
+            }
+
+            drawables.push({
+                type: 'characterPart',
+                x: character.x, y: character.y,
+                screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (playerStickWidth / 2) + playerStickOffsetIsoX,
+                screenY: screenPos.y + TILE_ISO_HEIGHT - CHARACTER_VISUAL_LIFT_OFFSET - CHARACTER_LEG_Z_HEIGHT - CHARACTER_BODY_Z_HEIGHT + (CHARACTER_BODY_ISO_HEIGHT / 2) - playerStickHeight / 2 + playerStickOffsetIsoY,
+                zHeight: playerStickHeight,
+                isoWidth: playerStickWidth,
+                isoHeight: playerStickWidth / 2,
+                colors: PLAYER_MELEE_WEAPON_COLOR, // Player melee weapon color
+                sortY: sortY + 0.004
+            });
+        } else if (character.type === 'player' && character.isAiming) { // NEW: Player Bow (when aiming)
+            let playerBowHeight = TILE_ISO_HEIGHT * 0.8;
+            let playerBowWidth = TILE_ISO_WIDTH * 0.2;
+            let playerBowOffsetIsoX = TILE_ISO_WIDTH * 0.2;
+            let playerBowOffsetIsoY = -TILE_ISO_HEIGHT * 0.1;
+
+            drawables.push({
+                type: 'characterPart',
+                x: character.x, y: character.y,
+                screenX: screenPos.x + (TILE_ISO_WIDTH / 2) - (playerBowWidth / 2) + playerBowOffsetIsoX,
+                screenY: screenPos.y + TILE_ISO_HEIGHT - CHARACTER_VISUAL_LIFT_OFFSET - CHARACTER_LEG_Z_HEIGHT - CHARACTER_BODY_Z_HEIGHT + (CHARACTER_BODY_ISO_HEIGHT / 2) - playerBowHeight / 2 + playerBowOffsetIsoY,
+                zHeight: playerBowHeight,
+                isoWidth: playerBowWidth,
+                isoHeight: playerBowWidth / 2,
+                colors: PLAYER_BOW_COLOR, // Player bow color
                 sortY: sortY + 0.004
             });
         }
@@ -539,6 +612,10 @@ function setupWorld() {
     player.isMoving = false;
     player.animationFrame = 0;
     player.frameCount = 0;
+    player.isAttacking = false; // Reset player attack state
+    player.isAiming = false;    // Reset player aim state
+    player.isShooting = false;  // Reset player shoot state
+
 
     // Generate Camps AFTER player is placed so camps can spawn away from player
     generateCamps();
@@ -978,6 +1055,7 @@ function updateWarriors() {
                             dx: arrowDx,
                             dy: arrowDy,
                             damage: warrior.attackDamage,
+                            isPlayerArrow: false // NEW: Mark as enemy arrow
                         });
                         // console.log(`Archer ${index} SHOT an arrow!`);
                     } else {
@@ -1008,17 +1086,36 @@ function updateWarriors() {
         arrow.x += arrow.dx * ARROW_SPEED;
         arrow.y += arrow.dy * ARROW_SPEED;
 
+        // Check for collision with Player (existing logic)
         const arrowDistToPlayer = Math.sqrt(Math.pow(arrow.x - player.x, 2) + Math.pow(arrow.y - player.y, 2));
-
-        if (arrowDistToPlayer < 0.5) {
+        if (arrowDistToPlayer < 0.5 && !arrow.isPlayerArrow) { // Only enemy arrows hit player
             if (player.health > 0) {
                 player.health = Math.max(0, player.health - arrow.damage);
                 // console.log(`Player hit by arrow! Health: ${player.health}`);
             }
             arrows.splice(index, 1);
+            return; // Arrow consumed, move to next
         }
-        else if (arrow.x < -20 || arrow.x > WORLD_UNITS_WIDTH + 20 || arrow.y < -20 || arrow.y > WORLD_UNITS_HEIGHT + 20) {
+
+        // NEW: Check for collision with Warriors (for player arrows)
+        if (arrow.isPlayerArrow) {
+            for (let i = 0; i < warriors.length; i++) {
+                const warrior = warriors[i];
+                const arrowDistToWarrior = Math.sqrt(Math.pow(arrow.x - warrior.x, 2) + Math.pow(arrow.y - warrior.y, 2));
+                if (arrowDistToWarrior < 0.5) { // If arrow hits a warrior
+                    warrior.health = Math.max(0, warrior.health - arrow.damage);
+                    // console.log(`Warrior ${i} hit by player arrow! Health: ${warrior.health}`);
+                    arrows.splice(index, 1); // Remove arrow
+                    // Break from this inner loop as the arrow is gone
+                    return; // Return from forEach callback to avoid processing further for this arrow
+                }
+            }
+        }
+
+        // Remove arrows that go too far off-screen
+        if (arrow.x < -20 || arrow.x > WORLD_UNITS_WIDTH + 20 || arrow.y < -20 || arrow.y > WORLD_UNITS_HEIGHT + 20) {
             arrows.splice(index, 1);
+            return; // Arrow removed, move to next
         }
     });
 }
@@ -1202,7 +1299,7 @@ function draw() {
             zHeight: TILE_ISO_HEIGHT * 0.1, // Very thin
             isoWidth: ARROW_VISUAL_LENGTH,
             isoHeight: TILE_ISO_HEIGHT * 0.05, // Very narrow
-            colors: ARROW_COLOR,
+            colors: arrow.isPlayerArrow ? PLAYER_ARROW_COLOR : ARROW_COLOR, // <--- CHANGED HERE
             sortY: arrowScreenPos.y + TILE_ISO_HEIGHT + ARROW_Z_OFFSET + 0.005 // Ensure arrows draw above characters/trees
         });
     });
@@ -1305,44 +1402,139 @@ function gameLoop(currentTime) {
         currentDx += 1;
     }
 
-    if (currentDx !== 0 && currentDy !== 0) {
-        const diagonalFactor = 1 / Math.sqrt(2);
-        currentDx *= diagonalFactor;
-        currentDy *= diagonalFactor;
-    }
-
-    let potentialNewPlayerX = player.x + currentDx * player.moveSpeed;
-    let potentialNewPlayerY = player.y + currentDy * player.moveSpeed;
-
-    // Check walkability for the proposed new position
-    if (isWalkable(potentialNewPlayerX, potentialNewPlayerY)) {
-        player.x = potentialNewPlayerX;
-        player.y = potentialNewPlayerY;
-    }
-    // If diagonal is blocked, try moving along one axis
-    else {
-        // Try moving horizontally
-        if (isWalkable(potentialNewPlayerX, player.y)) {
-            player.x = potentialNewPlayerX;
+    // Only allow player movement if not currently attacking or aiming
+    if (!player.isAttacking && !player.isAiming) {
+        if (currentDx !== 0 && currentDy !== 0) {
+            const diagonalFactor = 1 / Math.sqrt(2);
+            currentDx *= diagonalFactor;
+            currentDy *= diagonalFactor;
         }
-        // Try moving vertically
-        else if (isWalkable(player.x, potentialNewPlayerY)) {
+
+        let potentialNewPlayerX = player.x + currentDx * player.moveSpeed;
+        let potentialNewPlayerY = player.y + currentDy * player.moveSpeed;
+
+        // Check walkability for the proposed new position
+        if (isWalkable(potentialNewPlayerX, potentialNewPlayerY)) {
+            player.x = potentialNewPlayerX;
             player.y = potentialNewPlayerY;
         }
+        // If diagonal is blocked, try moving along one axis
+        else {
+            // Try moving horizontally
+            if (isWalkable(potentialNewPlayerX, player.y)) {
+                player.x = potentialNewPlayerX;
+            }
+            // Try moving vertically
+            else if (isWalkable(player.x, potentialNewPlayerY)) {
+                player.y = potentialNewPlayerY;
+            }
+        }
+        player.isMoving = (currentDx !== 0 || currentDy !== 0);
+    } else {
+        player.isMoving = false; // Player cannot move while attacking or aiming
     }
 
 
-    player.isMoving = (currentDx !== 0 || currentDy !== 0);
-
-    if (player.isMoving) {
+    if (player.isMoving && !player.isAttacking && !player.isAiming) { // Only animate movement if not attacking/aiming
         player.frameCount++;
         if (player.frameCount % player.animationSpeed === 0) {
             player.animationFrame = (player.animationFrame + 1) % 4;
         }
-    } else {
+    } else if (!player.isAttacking && !player.isAiming) { // Reset if stopped moving and not attacking/aiming
         player.frameCount = 0;
         player.animationFrame = 0;
     }
+
+
+    // --- NEW: Player Attack (Melee - 'J' key) ---
+    if (keysPressed['j'] && !player.isAttacking && !player.isAiming && (currentTime - player.lastAttackTime > player.attackCooldown)) {
+        player.isAttacking = true;
+        player.attackAnimationFrame = 0;
+        player.attackFrameCount = 0;
+        player.isMoving = false; // Stop movement during attack
+        // console.log("Player initiating melee attack!");
+    }
+
+    if (player.isAttacking) {
+        player.attackFrameCount++;
+        if (player.attackFrameCount % 5 === 0) { // Slower animation frames for swing
+            player.attackAnimationFrame++;
+            if (player.attackAnimationFrame === 2) { // 'Hit' frame for damage
+                // Check for enemies within melee range
+                warriors.forEach(warrior => {
+                    const distToWarrior = Math.sqrt(Math.pow(player.x - warrior.x, 2) + Math.pow(player.y - warrior.y, 2));
+                    if (distToWarrior <= player.attackRange) {
+                        warrior.health = Math.max(0, warrior.health - player.attackDamage);
+                        // console.log(`Player hit warrior! Warrior health: ${warrior.health}`);
+                    }
+                });
+            }
+            if (player.attackAnimationFrame >= 4) { // End of animation cycle
+                player.attackAnimationFrame = 0; // Reset
+                player.isAttacking = false; // Attack finished
+                player.lastAttackTime = currentTime; // Start cooldown
+                // console.log("Player melee attack finished.");
+            }
+        }
+    }
+
+    // --- NEW: Player Shoot (Ranged - 'K' key) ---
+    if (keysPressed['k'] && !player.isAttacking && !player.isAiming && (currentTime - player.lastShootTime > player.shootCooldown)) {
+        player.isAiming = true;
+        player.aimProgress = 0;
+        player.isMoving = false; // Stop movement during aim/shoot
+        // Find the closest enemy to target
+        player.targetEnemy = null;
+        let minDist = Infinity;
+        warriors.forEach(warrior => {
+            const dist = Math.sqrt(Math.pow(player.x - warrior.x, 2) + Math.pow(player.y - warrior.y, 2));
+            if (dist <= player.shootRange && dist < minDist) {
+                minDist = dist;
+                player.targetEnemy = warrior;
+            }
+        });
+
+        if (!player.targetEnemy) {
+            // console.log("No target in range for player to shoot. Canceling shot.");
+            player.isAiming = false; // Don't even start aiming if no target
+            player.lastShootTime = currentTime; // Still put it on cooldown to prevent spamming wasted shots
+        } else {
+            // console.log(`Player initiating aim at target: ${player.targetEnemy.x.toFixed(2)}, ${player.targetEnemy.y.toFixed(2)}`);
+        }
+    }
+
+    if (player.isAiming && player.targetEnemy) { // Continue aiming if a target exists
+        player.aimProgress++;
+        const AIM_DURATION_FRAMES = 30; // Matches archer aim duration
+        if (player.aimProgress >= AIM_DURATION_FRAMES) {
+            player.isShooting = true; // Set to true for a single frame to fire arrow
+            player.isAiming = false; // Aiming phase done
+            player.aimProgress = 0;
+
+            let arrowDx = player.targetEnemy.x - player.x;
+            let arrowDy = player.targetEnemy.y - player.y;
+            const arrowMagnitude = Math.sqrt(arrowDx * arrowDx + arrowDy * arrowDy);
+            if (arrowMagnitude > 0) { // Prevent division by zero if somehow at same spot
+                arrowDx /= arrowMagnitude;
+                arrowDy /= arrowMagnitude;
+            }
+
+            arrows.push({
+                x: player.x,
+                y: player.y,
+                dx: arrowDx,
+                dy: arrowDy,
+                damage: player.shootDamage,
+                isPlayerArrow: true // NEW: Identify this as a player-fired arrow
+            });
+            // console.log("Player fired an arrow!");
+            player.lastShootTime = currentTime; // Start cooldown
+            player.targetEnemy = null; // Clear target after shooting
+        }
+    } else if (player.isShooting) { // Reset after the arrow has been launched
+        player.isShooting = false;
+    }
+
 
     // --- Camera Follow Logic (snaps to player's exact position) ---
     camera.x = player.x;
@@ -1405,6 +1597,9 @@ if (retryButton) { // Ensure button exists before adding listener
         player.isMoving = false;
         player.animationFrame = 0;
         player.frameCount = 0;
+        player.isAttacking = false; // Reset player attack state
+        player.isAiming = false;    // Reset player aim state
+        player.isShooting = false;  // Reset player shoot state
         // Clear pressed keys so player doesn't instantly move if a key was held down
         for (const key in keysPressed) {
             keysPressed[key] = false;
@@ -1428,6 +1623,9 @@ if (regenerateButton) { // Ensure button exists before adding listener
         player.isMoving = false;
         player.animationFrame = 0;
         player.frameCount = 0;
+        player.isAttacking = false; // Reset player attack state
+        player.isAiming = false;    // Reset player aim state
+        player.isShooting = false;  // Reset player shoot state
         // Clear pressed keys so player doesn't instantly move if a key was held down
         for (const key in keysPressed) {
             keysPressed[key] = false;
